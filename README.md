@@ -26,8 +26,10 @@ Save each shooter and they join the stage standings, ranked by hit factor
 with each shooter's percentage of the leader. Tap a row to edit it. Names
 autocomplete from everyone entered across the match.
 
-Saving keeps the shooter in the box and resets the score to clean, so a
-practice squad doing run after run can just keep tapping Save.
+Shooters are picked from chips above the form, ordered by who has shot most
+recently. **+ Shooter** adds someone new. Saving keeps the shooter selected
+and resets the score to clean, so a practice squad doing run after run can
+just keep tapping Save.
 
 Standings read two ways. **All runs** lists every run, which is what you want
 when the same people are shooting repeatedly and you're watching for
@@ -94,9 +96,8 @@ Two things it deliberately does: stages only one person shot are left out,
 because being 100% of yourself says nothing; and where someone shot a stage
 several times, their best run is used, which is how a match would score them.
 
-Shooters are matched across sessions by name, ignoring case and extra spaces
-— so "dave" and "Dave" are one person, but "Dave S" is another. A proper
-roster with stable IDs is still open work.
+Shooters are matched by roster ID, so renaming someone does not split their
+history.
 
 ### Trend
 
@@ -199,6 +200,28 @@ and the origin as the beep.
 
 Remote start is still unknown. The hex box writes arbitrary bytes to the RX
 characteristic if you want to hunt for it.
+
+## Shooters
+
+Every shooter is a roster record with a stable ID, and every run points at one.
+The **Shooters** card on the Log tab lists them with their run counts.
+
+- **Rename** changes the name everywhere at once, current board and saved
+  sessions alike. Runs store the ID, not the name, so nothing is rewritten and
+  history cannot split.
+- **Merge** is for the same person recorded twice — "Dave" and "Dave S". Every
+  run moves across and the duplicate is removed. This rewrites saved sessions,
+  and cannot be undone.
+
+Existing data was migrated automatically on first launch: every distinct name
+across the board and all saved sessions became a roster record, and every run
+was stamped with its ID. The match is now stored under `stage-maths:match:v2`
+and the roster under `stage-maths:roster:v1`; the old `:v1` match key is still
+read but never written again, so it survives as a fallback copy.
+
+A session shared from another phone carries that phone's IDs, which mean
+nothing here, so importing re-resolves every run against the local roster by
+name — matching people you already have and adding the ones you don't.
 
 ## Scoring assumptions
 

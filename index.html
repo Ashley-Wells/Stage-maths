@@ -98,6 +98,17 @@
   .tip u { display: block; text-decoration: none; color: var(--soft); margin-bottom: 2px; }
   .tip i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 5px; }
 
+  /* The shooter picker wraps rather than scrolls: with a few regulars,
+     a scrolling row pushes "+ Shooter" off the edge. */
+  .chips.who { flex-wrap: wrap; overflow-x: visible; row-gap: 6px; margin-bottom: 12px; }
+  .rs { display: flex; align-items: center; gap: 8px; padding: 9px 0; border-top: 1px solid var(--line); }
+  .rs:first-child { border-top: none; }
+  .rs .nm { flex: 1; min-width: 0; font-size: 14.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rs .ct { font-size: 11.5px; color: var(--soft); flex: none; }
+  .rs .ghost { flex: none; padding: 6px 10px; font-size: 12px; }
+  .mrg { border-top: 1px solid var(--line); padding: 9px 0 3px; }
+  .mrg p { margin: 0 0 7px; font-size: 12.5px; color: var(--soft); }
+
   .sess .sh-b { flex: none; padding: 6px 12px; font-size: 12.5px; }
   .sess .x { flex: none; width: 32px; height: 32px; border-radius: 50%; font: inherit; font-size: 17px;
     line-height: 1; cursor: pointer; background: transparent; color: var(--soft); border: none; }
@@ -294,10 +305,11 @@
 
     <div class="card">
       <p class="lead" id="formLead">Their run — enter what you know, the rest follows</p>
-      <div class="field">
-        <label for="cname">Shooter</label>
-        <input type="text" id="cname" placeholder="name" list="roster" autocomplete="off" spellcheck="false">
-        <datalist id="roster"></datalist>
+      <p class="hint" style="margin-bottom:6px">Shooter</p>
+      <div class="chips who" id="whoChips"></div>
+      <div class="field" id="newWhoRow" hidden>
+        <label for="cname">New shooter</label>
+        <input type="text" id="cname" placeholder="name" autocomplete="off" spellcheck="false">
       </div>
       <div class="field">
         <label for="ctime">Time called</label>
@@ -442,6 +454,12 @@
       <p class="hint" id="h2hNote"></p>
     </div>
 
+    <div class="card">
+      <p class="lead">Shooters</p>
+      <div id="rosterList"></div>
+      <p class="hint" id="rosterNote"></p>
+    </div>
+
     <div class="card" id="trendCard" hidden>
       <p class="lead">Trend</p>
       <div class="viz">
@@ -476,9 +494,14 @@
 <script>
 (function () {
   var el = function (id) { return document.getElementById(id); };
-  var BUILD = 'v18';  // bump with CACHE in sw.js
+  var BUILD = 'v19';  // bump with CACHE in sw.js
   el('build').textContent = 'build ' + BUILD;
-  var KEY = 'stage-maths:match:v1';
+  // v1 is still read but never written again, so a bad migration cannot destroy
+  // a match that already exists. Delete nothing; just stop writing to it.
+  var KEY_V1 = 'stage-maths:match:v1';
+  var KEY = 'stage-maths:match:v2';
+  var ROSTER_KEY = 'stage-maths:roster:v1';
+  var roster = [];
 
   var state = { major: false, active: 0, stages: [] };
   var hits = [], lastPH = 'points', editingId = null;
@@ -486,6 +509,7 @@
   // they step with the arrows or type a time, and released by the next start beep,
   // so excluding a stray neighbour shot sticks for this string but not the next.
   var shots = [], shotIdx = -1, auto = false, held = false, bleOn = false;
+  var whoId = null;   // roster id of the shooter the form is for
   var cur = { hf: 0, t: 0, p: 0 };
   var prev = {};
 
@@ -495,7 +519,7 @@
 
   function load() {
     try {
-      var raw = localStorage.getItem(KEY);
+      var raw = localStorage.getItem(KEY) || localStorage.getItem(KEY_V1);
       if (raw) {
         var o = JSON.parse(raw);
         if (o && Array.isArray(o.stages) && o.stages.length) state = o;
@@ -506,6 +530,62 @@
     if (!(state.active >= 0) || state.active >= state.stages.length) state.active = 0;
   }
   function persist() { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {} }
+
+  function loadRoster() {
+    try {
+      var raw = localStorage.getItem(ROSTER_KEY);
+      var o = raw ? JSON.parse(raw) : null;
+      roster = Array.isArray(o) ? o.filter(function (r) { return r && r.id && typeof r.name === 'string'; }) : [];
+    } catch (e) { roster = []; }
+  }
+  function persistRoster() {
+    try { localStorage.setItem(ROSTER_KEY, JSON.stringify(roster)); return true; } catch (e) { return false; }
+  }
+
+  function shooterById(id) {
+    for (var i = 0; i < roster.length; i++) if (roster[i].id === id) return roster[i];
+    return null;
+  }
+  function shooterByName(n) {
+    var k = nameKey(n);
+    for (var i = 0; i < roster.length; i++) if (nameKey(roster[i].name) === k) return roster[i];
+    return null;
+  }
+  // Resolve a written name to a roster record, creating one if it is new.
+  function ensureShooter(n) {
+    var hit = shooterByName(n);
+    if (hit) return hit;
+    var rec = { id: uid(), name: nameOf(n) };
+    roster.push(rec);
+    return rec;
+  }
+  // What to show for a run. The roster record wins, so a rename lands
+  // everywhere at once without rewriting stored runs.
+  function runName(e) {
+    var r = e && e.sid ? shooterById(e.sid) : null;
+    return r ? r.name : nameOf(e && e.name);
+  }
+  // Identity for grouping. A shooter id when there is one, otherwise the
+  // normalised name - which is what a session shared from another phone has.
+  function runKey(e) { return (e && e.sid) ? e.sid : nameKey(e && e.name); }
+
+  // One-off: build the roster from everything already recorded, and stamp a
+  // shooter id onto every run. Runs imported later from another phone carry
+  // that phone's ids, which mean nothing here, so they are re-resolved by name.
+  function migrateRoster() {
+    var touched = false;
+    function stamp(entries) {
+      (entries || []).forEach(function (e) {
+        if (e.sid && shooterById(e.sid)) return;
+        var rec = ensureShooter(e.name);
+        e.sid = rec.id;
+        touched = true;
+      });
+    }
+    state.stages.forEach(function (st) { stamp(st.entries); });
+    sessions.forEach(function (ss) { (ss.stages || []).forEach(function (st) { stamp(st.entries); }); });
+    if (touched) { persistRoster(); persist(); persistSessions(); }
+  }
 
   function dropC() { return state.major ? 1 : 2; }
   function dropD() { return state.major ? 3 : 4; }
@@ -525,8 +605,8 @@
     var m = {}, order = [];
     (entries || []).forEach(function (e) {
       if (!(e.hf > 0)) return;
-      var k = nameKey(e.name);
-      if (!m[k]) { m[k] = { name: nameOf(e.name), runs: 0, sum: 0, best: e }; order.push(k); }
+      var k = runKey(e);
+      if (!m[k]) { m[k] = { key: k, sid: e.sid || null, name: runName(e), runs: 0, sum: 0, best: e }; order.push(k); }
       m[k].runs++;
       m[k].sum += e.hf;
       if (e.hf > m[k].best.hf) m[k].best = e;
@@ -556,7 +636,7 @@
       if (top <= 0) return;
       var avail = maxPts(st);
       groups.forEach(function (g) {
-        var k = nameKey(g.name);
+        var k = g.key;
         if (!byName[k]) byName[k] = { name: g.name, pts: 0, stages: 0 };
         byName[k].pts += (g.hf / top) * avail;
         byName[k].stages++;
@@ -635,18 +715,139 @@
     c.appendChild(add);
   }
 
-  function renderRoster() {
-    var seen = {};
+  // Shooter chips. Most recently used first, so the people actually shooting
+  // today sit under your thumb rather than in alphabetical order.
+  function rosterOrder() {
+    var seen = {}, out = [], n = 0;
     state.stages.forEach(function (st) {
-      st.entries.forEach(function (e) { if (e.name) seen[e.name] = 1; });
+      st.entries.forEach(function (e) { if (e.sid) seen[e.sid] = ++n; });
     });
-    var dl = el('roster');
-    dl.innerHTML = '';
-    Object.keys(seen).sort().forEach(function (n) {
-      var o = document.createElement('option');
-      o.value = n;
-      dl.appendChild(o);
+    return roster.slice().sort(function (a, b) {
+      var sa = seen[a.id] || 0, sb = seen[b.id] || 0;
+      if (sa !== sb) return sb - sa;
+      return a.name.localeCompare(b.name);
     });
+  }
+
+  function renderRoster() {
+    var c = el('whoChips');
+    c.innerHTML = '';
+    rosterOrder().forEach(function (r) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = r.name;
+      b.setAttribute('aria-pressed', String(r.id === whoId));
+      b.addEventListener('click', function () {
+        // No toggle-off: tapping the selected shooter again used to clear the
+        // selection, and the next Save then refused with "pick a shooter".
+        // Repeat runs by one person are the common case here.
+        whoId = r.id;
+        el('newWhoRow').hidden = true;
+        el('cname').value = '';
+        renderRoster();
+        update();
+      });
+      c.appendChild(b);
+    });
+    var add = document.createElement('button');
+    add.type = 'button';
+    add.textContent = '+ Shooter';
+    add.addEventListener('click', function () {
+      el('newWhoRow').hidden = false;
+      el('cname').focus();
+    });
+    c.appendChild(add);
+    // Nothing to pick on a fresh install, so do not make them find the button.
+    if (!roster.length) el('newWhoRow').hidden = false;
+  }
+
+  function renderRosterAdmin() {
+    var box = el('rosterList');
+    box.innerHTML = '';
+    if (!roster.length) {
+      box.innerHTML = '<div class="empty">Shooters appear here once you have saved a run.</div>';
+      el('rosterNote').textContent = '';
+      return;
+    }
+    // How many runs each shooter has, live board and saved sessions together.
+    var tally = {};
+    function count(entries) {
+      (entries || []).forEach(function (e) { if (e.sid) tally[e.sid] = (tally[e.sid] || 0) + 1; });
+    }
+    state.stages.forEach(function (st) { count(st.entries); });
+    sessions.forEach(function (ss) { (ss.stages || []).forEach(function (st) { count(st.entries); }); });
+
+    roster.slice().sort(function (a, b) { return (tally[b.id] || 0) - (tally[a.id] || 0); }).forEach(function (r) {
+      var n = tally[r.id] || 0;
+      var row = document.createElement('div');
+      row.className = 'rs';
+      row.innerHTML = '<span class="nm"></span><span class="ct">' + n + (n === 1 ? ' run' : ' runs') + '</span>' +
+        '<button type="button" class="ghost rn">Rename</button>' +
+        '<button type="button" class="ghost mg">Merge</button>';
+      row.querySelector('.nm').textContent = r.name;
+
+      row.querySelector('.rn').addEventListener('click', function () {
+        var v = prompt('Rename this shooter', r.name);
+        if (v === null) return;
+        v = nameOf(v);
+        var clash = shooterByName(v);
+        if (clash && clash.id !== r.id) {
+          alert('There is already a shooter called ' + clash.name + '. Use Merge to combine them.');
+          return;
+        }
+        r.name = v;
+        persistRoster();
+        renderRoster(); renderRosterAdmin(); update();
+      });
+
+      row.querySelector('.mg').addEventListener('click', function () {
+        var open = row.nextSibling && row.nextSibling.className === 'mrg';
+        Array.prototype.slice.call(box.querySelectorAll('.mrg')).forEach(function (x) { x.remove(); });
+        if (open) return;
+        var others = roster.filter(function (o) { return o.id !== r.id; });
+        if (!others.length) { alert('There is nobody else to merge ' + r.name + ' into.'); return; }
+        var panel = document.createElement('div');
+        panel.className = 'mrg';
+        var lead = document.createElement('p');
+        lead.textContent = 'Merge ' + r.name + ' into which shooter? Every run moves across and ' +
+          r.name + ' is removed.';
+        panel.appendChild(lead);
+        var chips = document.createElement('div');
+        chips.className = 'chips';
+        others.forEach(function (o) {
+          var b = document.createElement('button');
+          b.type = 'button';
+          b.textContent = o.name;
+          b.addEventListener('click', function () {
+            if (!confirm('Move every run by ' + r.name + ' to ' + o.name + '?\n\nThis changes saved sessions too and cannot be undone.')) return;
+            mergeShooters(r.id, o.id);
+          });
+          chips.appendChild(b);
+        });
+        panel.appendChild(chips);
+        box.insertBefore(panel, row.nextSibling);
+      });
+
+      box.appendChild(row);
+    });
+    el('rosterNote').textContent = 'Renaming updates every run at once. Merging is for the same person ' +
+      'recorded twice - it rewrites saved sessions as well as the current board.';
+  }
+
+  function mergeShooters(fromId, intoId) {
+    var into = shooterById(intoId);
+    if (!into) return;
+    function move(entries) {
+      (entries || []).forEach(function (e) {
+        if (e.sid === fromId) { e.sid = intoId; e.name = into.name; }
+      });
+    }
+    state.stages.forEach(function (st) { move(st.entries); });
+    sessions.forEach(function (ss) { (ss.stages || []).forEach(function (st) { move(st.entries); }); });
+    roster = roster.filter(function (r) { return r.id !== fromId; });
+    if (whoId === fromId) whoId = intoId;
+    persistRoster(); persist(); persistSessions();
+    renderRoster(); renderRosterAdmin(); renderLog(); update();
   }
 
   function renderStand() {
@@ -687,7 +888,7 @@
         '<div class="who"><div class="nm"></div><div class="meta">' + x.t.toFixed(2) + 's · ' + x.p + ' pts</div></div>' +
         '<div class="sc"><div class="sh">' + x.hf.toFixed(2) + '</div><div class="pc">' + pct.toFixed(1) + '%</div></div>' +
         '<button class="x" type="button" aria-label="Remove">&times;</button>';
-      row.querySelector('.nm').textContent = x.name || 'Unnamed';
+      row.querySelector('.nm').textContent = runName(x);
       row.querySelector('.x').addEventListener('click', function (ev) {
         ev.stopPropagation();
         stage().entries = stage().entries.filter(function (e) { return e.id !== x.id; });
@@ -735,7 +936,9 @@
 
   function startEdit(x) {
     editingId = x.id;
-    el('cname').value = x.name || '';
+    whoId = x.sid || (shooterByName(x.name) || {}).id || null;
+    el('cname').value = '';
+    el('newWhoRow').hidden = true;
     el('ctime').value = x.t.toFixed(2);
     el('cpts').value = String(x.p);
     el('chfIn').value = x.hf.toFixed(2);
@@ -753,6 +956,7 @@
     el('cancelEdit').hidden = true;
     el('formLead').textContent = 'Their run — enter what you know, the rest follows';
     el('cname').value = '';
+    el('newWhoRow').hidden = true;
     hits = []; paintPad();
   }
 
@@ -822,14 +1026,20 @@
 
   el('save').addEventListener('click', function () {
     if (!(cur.hf > 0)) return;
-    var name = el('cname').value.trim();
+    var typed = el('cname').value.trim();
+    var rec = typed ? ensureShooter(typed) : (whoId ? shooterById(whoId) : null);
+    if (!rec) { alert('Pick a shooter first, or tap + Shooter to add one.'); return; }
+    whoId = rec.id;
+    el('cname').value = '';
+    el('newWhoRow').hidden = true;
+    persistRoster();
     if (editingId) {
       stage().entries.forEach(function (e) {
-        if (e.id === editingId) { e.name = name; e.t = cur.t; e.p = Math.round(cur.p); e.hf = cur.hf; }
+        if (e.id === editingId) { e.sid = rec.id; e.name = rec.name; e.t = cur.t; e.p = Math.round(cur.p); e.hf = cur.hf; }
       });
       resetForm();
     } else {
-      stage().entries.push({ id: uid(), name: name, t: cur.t, p: Math.round(cur.p), hf: cur.hf });
+      stage().entries.push({ id: uid(), sid: rec.id, name: rec.name, t: cur.t, p: Math.round(cur.p), hf: cur.hf });
       // Keep the shooter for their next run; reset the score to a clean sheet.
       hits = [];
       lastPH = 'points';
@@ -964,6 +1174,8 @@
           rounds: Math.max(1, Math.min(200, Math.round(fin(st.rounds)) || 24)),
           entries: (Array.isArray(st.entries) ? st.entries : []).slice(0, 300).map(function (e) {
             if (!e || typeof e !== 'object') return null;
+            // A sid from another phone means nothing here; adoptShooters
+            // re-resolves every imported run against the local roster by name.
             return { name: str(e.name, 40) || 'Unnamed', t: fin(e.t), p: Math.round(fin(e.p)), hf: fin(e.hf) };
           }).filter(function (e) { return e && e.hf > 0; })
         };
@@ -1008,12 +1220,29 @@
     });
   }
 
+  // Give every run in an imported session a local shooter id, matching by name
+  // and creating roster records for people we have not seen before.
+  function adoptShooters(ss) {
+    var made = false;
+    (ss.stages || []).forEach(function (st) {
+      st.entries.forEach(function (e) {
+        var rec = ensureShooter(e.name);
+        if (!shooterByName(e.name)) made = true;
+        e.sid = rec.id;
+        e.name = rec.name;
+      });
+    });
+    persistRoster();
+    return made;
+  }
+
   function mergeSessions(list) {
     var added = 0, skipped = 0;
     list.forEach(function (raw) {
       var ss = cleanSession(JSON.stringify(raw));
       if (!ss) { skipped++; return; }
       if (sessions.some(function (x) { return x.id === ss.id; })) { skipped++; return; }
+      adoptShooters(ss);
       sessions.push(ss);
       added++;
     });
@@ -1083,8 +1312,10 @@
       if (!confirm('Import "' + ss.name + '"?\n\n' + ss.stages.length +
           (ss.stages.length === 1 ? ' stage, ' : ' stages, ') + runs +
           (runs === 1 ? ' run.' : ' runs.'))) { renderLog(); return; }
+      adoptShooters(ss);
       sessions.push(ss);
       if (!persistSessions()) { sessions.pop(); alert('Could not save it - this browser is refusing to store data.'); }
+      renderRoster();
       renderLog();
     });
   }
@@ -1104,7 +1335,7 @@
         return {
           name: st.name, rounds: st.rounds,
           entries: st.entries.map(function (e) {
-            return { name: nameOf(e.name), t: e.t, p: e.p, hf: e.hf };
+            return { sid: e.sid || null, name: runName(e), t: e.t, p: e.p, hf: e.hf };
           })
         };
       })
@@ -1145,7 +1376,7 @@
         if (top <= 0) return;
         stagesUsed++;
         groups.forEach(function (g) {
-          var k = nameKey(g.name);
+          var k = g.key;
           if (!m[k]) m[k] = { name: g.name, stages: 0, sum: 0, wins: 0, runs: 0 };
           m[k].stages++;
           m[k].sum += (g.hf / top) * 100;
@@ -1267,7 +1498,7 @@
         groups.forEach(function (g) { if (g.hf > top) top = g.hf; });
         if (top <= 0) return;
         groups.forEach(function (g) {
-          var k = nameKey(g.name);
+          var k = g.key;
           if (!per[k]) per[k] = { sum: 0, n: 0, name: g.name };
           per[k].sum += (g.hf / top) * 100;
           per[k].n++;
@@ -1436,6 +1667,7 @@
       'Stages only one person shot are left out, and repeat runs count as the shooter\u2019s best.';
 
     renderTrend();
+    renderRosterAdmin();
 
     var list = el('sessList');
     list.innerHTML = '';
@@ -1788,6 +2020,8 @@
 
   load();
   loadSessions();
+  loadRoster();
+  migrateRoster();
   el('bMinor').setAttribute('aria-pressed', String(!state.major));
   el('bMajor').setAttribute('aria-pressed', String(state.major));
   syncStageFields();

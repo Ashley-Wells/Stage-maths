@@ -799,17 +799,23 @@
     try { localStorage.setItem(SVC_KEY, el('svcUuid').value.trim()); } catch (e) {}
   });
 
-  // AMG Lab Commander frame, confirmed against a real capture:
-  //   01 TT SS SS CCCC PPPP FFFF MMMM 00 03
+  // AMG Lab Commander frame, confirmed against two real captures:
+  //   01 TT SS SS CCCC PPPP FFFF MMMM 00 ??
   // TT 05 = start beep, 03 = shot. SS shot number. CCCC time from start and
   // PPPP split from the previous shot, both big-endian centiseconds. FFFF is
-  // the first shot time, constant across a string. MMMM mirrored CCCC in the
-  // capture we have; unconfirmed, so unused.
+  // the first shot time, constant across a string.
+  //
+  // Only bytes 0, 1, 2, 4-7 are trusted. MMMM mirrored CCCC in both captures
+  // but that is what a running total would do anyway. Byte 13 was 03 in the
+  // first capture and 06 in the second, so it is not a footer - probably a
+  // string counter. It was validated as a footer once and silently rejected
+  // every packet of the second string. Do not constrain it again without
+  // captures that prove what it is.
   var shots = [];
 
   function parseAmg(dv) {
     if (dv.byteLength !== 14) return null;
-    if (dv.getUint8(0) !== 0x01 || dv.getUint8(13) !== 0x03) return null;
+    if (dv.getUint8(0) !== 0x01) return null;
     var t = dv.getUint8(1);
     if (t === 0x05) return { start: true };
     if (t !== 0x03) return null;

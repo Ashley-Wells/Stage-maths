@@ -150,6 +150,7 @@
   .headrow { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
   .headrow .lead, .headrow .hint { margin: 0; }
   .headrow .ghost { margin-left: auto; }
+  .headrow .ghost ~ .ghost { margin-left: 0; }
 
   .st { display: flex; align-items: center; gap: 11px; padding: 10px 0; border-top: 1px solid var(--line); cursor: pointer; }
   .st:first-child { border-top: none; }
@@ -307,6 +308,7 @@
     <div class="card" id="bleLogCard" hidden>
       <div class="headrow">
         <p class="lead">Incoming data</p>
+        <button type="button" class="ghost" id="bleCopy">Copy</button>
         <button type="button" class="ghost" id="bleClear">Clear</button>
       </div>
       <div id="bleLog" class="log"></div>
@@ -816,6 +818,7 @@
           div.innerHTML = '<b></b><br>' + label + props.join(', ');
           div.querySelector('b').textContent = c.uuid;
           list.appendChild(div);
+          bleLog('char  ' + c.uuid + '  ' + label + props.join(', '));
 
           if (c.uuid === NUS_RX) writeChar = c;
           else if (!writeChar && (c.properties.write || c.properties.writeWithoutResponse)) writeChar = c;
@@ -844,6 +847,52 @@
   });
 
   el('bleClear').addEventListener('click', function () { el('bleLog').textContent = ''; });
+
+  function fallbackCopy(text) {
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    ta.setAttribute('readonly', '');
+    ta.style.position = 'fixed';
+    ta.style.top = '0';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    ta.setSelectionRange(0, ta.value.length);
+    var ok = false;
+    try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+    document.body.removeChild(ta);
+    return ok;
+  }
+
+  el('bleCopy').addEventListener('click', function () {
+    var body = el('bleLog').textContent;
+    if (!body.trim()) { bleLog('Nothing to copy yet.'); return; }
+
+    var text = [
+      '# stage-maths timer capture',
+      '# when     ' + new Date().toISOString(),
+      '# device   ' + ((bleDevice && bleDevice.name) || 'unknown'),
+      '# service  ' + el('svcUuid').value.trim(),
+      '# order    newest first',
+      '',
+      body
+    ].join('\n');
+
+    var btn = el('bleCopy');
+    var done = function (ok) {
+      btn.textContent = ok ? 'Copied' : 'Select it';
+      setTimeout(function () { btn.textContent = 'Copy'; }, 1600);
+      if (!ok) bleLog('Could not reach the clipboard. Long-press the log and copy by hand.');
+    };
+
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text)
+        .then(function () { done(true); })
+        .catch(function () { done(fallbackCopy(text)); });
+    } else {
+      done(fallbackCopy(text));
+    }
+  });
 
   el('bleSend').addEventListener('click', function () {
     if (!writeChar) { bleLog('No writable characteristic found.'); return; }

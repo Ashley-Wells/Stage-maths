@@ -18,6 +18,10 @@ with no signal.
 
 ## Stage tab
 
+Each stage carries a name, a round count and, optionally, how far its first
+target was — that last one feeds Draw by distance on the Log tab and can be
+left alone if you don't care.
+
 Enter any two of time, hit factor and points and the third is calculated.
 Whichever you touched last is treated as known. The tap pad starts from a
 clean run, so you only tap what was dropped.
@@ -140,10 +144,21 @@ stage you shot alone says nothing about who is faster. **PB** is the fastest
 draw on record from any stage, including those, and is deliberately a
 different scope: it is a personal best, not a comparison.
 
-If you ever want absolute draw tracking — "is my draw getting faster" rather
-than "faster than Craig" — that needs the stage to record its first target's
-distance, in buckets (5 / 7 / 10 / 15 / 20 / 25 m+) so stages group usefully.
-Not built.
+### Draw by distance
+
+The absolute question — "is my draw getting faster" rather than "faster than
+Craig". A stage records how far its first target was, as a bucket: 5 / 7 / 10
+/ 15 / 20 / 25 m+, one tap beside the round count. Draws are then grouped by
+bucket, showing each shooter's average, their best on record and their most
+recent session's average.
+
+Buckets are coarse deliberately. Exact metres would put every stage in its own
+bucket and nothing would ever group with anything else.
+
+Two honest limits. Distance does not capture presentation, so a partial at 10 m
+sits alongside an open target at 10 m — if that starts to bite, the fix is a
+difficulty flag, not finer distances. And a stage with no distance set is
+simply left out, so this fills up only as fast as you tag stages.
 
 ### Backup
 

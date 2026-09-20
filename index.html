@@ -1,7 +1,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#E4DAC3" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#24211A" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#EAF0F7" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0E1420" media="(prefers-color-scheme: dark)">
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
@@ -15,22 +15,22 @@
 <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
   :root {
-    --bg: #E4DAC3; --surface: #F2ECDE; --raised: #FAF6EC; --line: #C6B695;
-    --ink: #17120A; --soft: #6B6151; --accent: #8A5320; --accent-bg: #EADBBF;
-    --pen: #96241B; --pen-bg: #E9CEC7; --pen-line: #C98E82;
+    --bg: #EAF0F7; --surface: #FFFFFF; --raised: #F5F8FC; --line: #CBD8E6;
+    --ink: #0B1826; --soft: #4F6076; --accent: #0B6FA4; --accent-bg: #D6EAF6;
+    --pen: #C0392B; --pen-bg: #F8E3E0; --pen-line: #E0A79E;
     --r: 12px; --r-sm: 9px;
   }
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
-      --bg: #24211A; --surface: #312D24; --raised: #3D382C; --line: #564E3E;
-      --ink: #F8F3E8; --soft: #C0B6A0; --accent: #F2CB83; --accent-bg: #4A3D26;
-      --pen: #F59E8E; --pen-bg: #523028; --pen-line: #8C5548;
+      --bg: #0E1420; --surface: #16202F; --raised: #1E2B3D; --line: #2E3E55;
+      --ink: #EAF1FA; --soft: #93A6BE; --accent: #4FC3F7; --accent-bg: #12354B;
+      --pen: #FF8A80; --pen-bg: #3E2320; --pen-line: #7E4A45;
     }
   }
   :root[data-theme="dark"] {
-    --bg: #24211A; --surface: #312D24; --raised: #3D382C; --line: #564E3E;
-    --ink: #F8F3E8; --soft: #C0B6A0; --accent: #F2CB83; --accent-bg: #4A3D26;
-    --pen: #F59E8E; --pen-bg: #523028; --pen-line: #8C5548;
+    --bg: #0E1420; --surface: #16202F; --raised: #1E2B3D; --line: #2E3E55;
+    --ink: #EAF1FA; --soft: #93A6BE; --accent: #4FC3F7; --accent-bg: #12354B;
+    --pen: #FF8A80; --pen-bg: #3E2320; --pen-line: #7E4A45;
   }
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) .viz {
@@ -494,7 +494,7 @@
 <script>
 (function () {
   var el = function (id) { return document.getElementById(id); };
-  var BUILD = 'v19';  // bump with CACHE in sw.js
+  var BUILD = 'v20';  // bump with CACHE in sw.js
   el('build').textContent = 'build ' + BUILD;
   // v1 is still read but never written again, so a bad migration cannot destroy
   // a match that already exists. Delete nothing; just stop writing to it.

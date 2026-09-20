@@ -223,6 +223,27 @@ A session shared from another phone carries that phone's IDs, which mean
 nothing here, so importing re-resolves every run against the local roster by
 name — matching people you already have and adding the ones you don't.
 
+## Colours
+
+"Midnight": deep navy surfaces with a cyan accent, chosen over three other
+candidates. Both modes are stepped separately rather than one being a flip of
+the other, and the values were checked rather than eyeballed — body text
+clears 4.5:1 on its surface and the accent clears 3:1.
+
+The accent and the penalty colour sit on screen together (the leader row and
+the primary button against the M and NS keys), so they have to be tellable
+apart by someone colourblind, not just by hue. Cyan against red separates by
+ΔE 17 dark and 18 light, against a target of 8. A warm accent fails this
+badly — orange or brass beside red comes out at ΔE 2–3, effectively identical
+under deuteranopia. Keep that in mind before making the accent warm.
+
+The chart's series colours were re-validated against the new card surfaces;
+on the dark card they now clear 3:1 outright.
+
+App icons were not changed and still carry the old charcoal background. Per
+the note above, rename to `-v3` rather than overwriting if they are ever
+redrawn.
+
 ## Scoring assumptions
 
 Alpha 5. Minor: charlie 3, delta 1. Major: charlie 4, delta 2. A mike is the

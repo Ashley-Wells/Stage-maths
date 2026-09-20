@@ -457,6 +457,12 @@
       <p class="hint" id="h2hNote"></p>
     </div>
 
+    <div class="card" id="drawCard" hidden>
+      <p class="lead">Draw</p>
+      <div id="drawList"></div>
+      <p class="hint" id="drawNote"></p>
+    </div>
+
     <div class="card">
       <p class="lead">Shooters</p>
       <div id="rosterList"></div>
@@ -497,7 +503,7 @@
 <script>
 (function () {
   var el = function (id) { return document.getElementById(id); };
-  var BUILD = 'v21';  // bump with CACHE in sw.js
+  var BUILD = 'v22';  // bump with CACHE in sw.js
   el('build').textContent = 'build ' + BUILD;
   // v1 is still read but never written again, so a bad migration cannot destroy
   // a match that already exists. Delete nothing; just stop writing to it.
@@ -1577,6 +1583,73 @@
     return { labels: labels, people: people };
   }
 
+  // Draw speed, compared the only way it can honestly be compared: against the
+  // other people who drew to the SAME first target. Distance and presentation
+  // cancel out, which raw first-shot times across different stages cannot do.
+  function drawTable() {
+    var m = {}, stagesUsed = 0, pb = {};
+    // Personal best over every timed draw, including stages nobody else shot.
+    sessions.forEach(function (ss) {
+      (ss.stages || []).forEach(function (st) {
+        (st.entries || []).forEach(function (e) {
+          if (!(e.f1 > 0)) return;
+          var k = runKey(e);
+          if (!pb[k] || e.f1 < pb[k]) pb[k] = e.f1;
+        });
+      });
+    });
+    sessions.forEach(function (ss) {
+      (ss.stages || []).forEach(function (st) {
+        var per = {};
+        (st.entries || []).forEach(function (e) {
+          if (!(e.f1 > 0)) return;
+          var k = runKey(e);
+          if (!per[k] || e.f1 < per[k].f1) per[k] = { f1: e.f1, name: runName(e) };
+        });
+        var keys = Object.keys(per);
+        if (keys.length < 2) return;
+        var fastest = Infinity;
+        keys.forEach(function (k) { if (per[k].f1 < fastest) fastest = per[k].f1; });
+        if (!(fastest > 0) || !isFinite(fastest)) return;
+        stagesUsed++;
+        keys.forEach(function (k) {
+          if (!m[k]) m[k] = { name: per[k].name, stages: 0, sum: 0, wins: 0, pb: pb[k] || 0 };
+          m[k].stages++;
+          m[k].sum += (fastest / per[k].f1) * 100;   // fastest draw is 100%
+          if (per[k].f1 <= fastest) m[k].wins++;
+        });
+      });
+    });
+    var rows = Object.keys(m).map(function (k) { var r = m[k]; r.avg = r.sum / r.stages; return r; });
+    rows.sort(function (a, b) { return b.avg - a.avg; });
+    return { rows: rows, stages: stagesUsed };
+  }
+
+  function renderDraw() {
+    var d = drawTable();
+    el('drawCard').hidden = d.rows.length < 2;
+    if (d.rows.length < 2) return;
+    var box = el('drawList');
+    box.innerHTML = '';
+    d.rows.forEach(function (r, i) {
+      var row = document.createElement('div');
+      row.className = 'st' + (i === 0 ? ' lead' : '');
+      row.style.cursor = 'default';
+      row.innerHTML = '<span class="rk">' + (i + 1) + '</span>' +
+        '<div class="who"><div class="nm"></div><div class="meta">' + r.stages +
+          (r.stages === 1 ? ' stage' : ' stages') + ' \u00b7 ' + r.wins + ' fastest \u00b7 PB ' +
+          r.pb.toFixed(2) + 's</div></div>' +
+        '<div class="sc"><div class="sh">' + r.avg.toFixed(1) + '%</div></div>';
+      row.querySelector('.nm').textContent = r.name;
+      box.appendChild(row);
+    });
+    el('drawNote').textContent = 'First shot against the fastest draw on the same stage, averaged across ' +
+      d.stages + (d.stages === 1 ? ' stage' : ' stages') + '. Everyone draws to the same target, so distance ' +
+      'and presentation cancel out \u2014 which raw draw times across different stages cannot do. ' +
+      'Only stages where at least two people have a timed first shot are counted. ' +
+      'PB is the fastest draw on record, from any stage, and is not comparable between stages.';
+  }
+
   var SLOTS = ['var(--s1)', 'var(--s2)', 'var(--s3)', 'var(--s4)', 'var(--s5)', 'var(--s6)'];
   var trendShown = [], trendGeom = null;
 
@@ -1728,6 +1801,7 @@
       'Stages only one person shot are left out, and repeat runs count as the shooter\u2019s best.';
 
     renderTrend();
+    renderDraw();
     renderRosterAdmin();
 
     var list = el('sessList');

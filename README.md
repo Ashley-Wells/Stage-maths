@@ -124,6 +124,27 @@ are left off and the note says how many — hues are assigned in a fixed order
 and never recycled, because two shooters sharing a colour is worse than one
 being absent.
 
+### Draw
+
+Draw speed, compared the only way it honestly can be: against the other people
+who drew to the **same** first target. Your first shot as a percentage of the
+fastest draw on that stage, averaged across stages.
+
+Raw draw times don't compare between stages — a 25 m partial and a 5 m open
+target are not the same skill — but everyone on a stage draws to the same
+thing, so distance and presentation cancel out. Same reasoning as head to
+head, applied to the first shot instead of the hit factor.
+
+Only stages where at least two people have a timed first shot are counted; a
+stage you shot alone says nothing about who is faster. **PB** is the fastest
+draw on record from any stage, including those, and is deliberately a
+different scope: it is a personal best, not a comparison.
+
+If you ever want absolute draw tracking — "is my draw getting faster" rather
+than "faster than Craig" — that needs the stage to record its first target's
+distance, in buckets (5 / 7 / 10 / 15 / 20 / 25 m+) so stages group usefully.
+Not built.
+
 ### Backup
 
 Sessions live in this browser and nowhere else, so clearing site data loses

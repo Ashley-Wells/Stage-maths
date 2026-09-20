@@ -114,10 +114,13 @@
     line-height: 1; cursor: pointer; background: transparent; color: var(--soft); border: none; }
   .sess .body { margin-top: 10px; }
   .sess h4 { margin: 12px 0 2px; font-size: 13px; font-weight: 600; color: var(--soft); }
-  .rn { display: flex; gap: 10px; font-size: 13.5px; padding: 4px 0; font-variant-numeric: tabular-nums; }
-  .rn .who { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rn { display: flex; gap: 10px; font-size: 13.5px; padding: 5px 0; font-variant-numeric: tabular-nums; }
+  .rn .who { flex: 1; min-width: 0; }
+  .rn .l1 { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rn .l2 { display: block; font-size: 11.5px; color: var(--soft); }
+  .rn .l2:empty { display: none; }
   .rn .hf { font-weight: 700; }
-  .rn .pc { width: 52px; text-align: right; color: var(--soft); }
+  .rn .pc { width: 58px; text-align: right; color: var(--soft); }
 
   .seg.sm { margin-bottom: 10px; padding: 3px; }
   .seg.sm button { padding: 7px 0; font-size: 13px; }
@@ -494,7 +497,7 @@
 <script>
 (function () {
   var el = function (id) { return document.getElementById(id); };
-  var BUILD = 'v20';  // bump with CACHE in sw.js
+  var BUILD = 'v21';  // bump with CACHE in sw.js
   el('build').textContent = 'build ' + BUILD;
   // v1 is still read but never written again, so a bad migration cannot destroy
   // a match that already exists. Delete nothing; just stop writing to it.
@@ -1024,6 +1027,44 @@
     });
   }
 
+  // What the tap pad and the timer know at the moment of saving, and only when
+  // they genuinely apply to this run.
+  function runExtras() {
+    var out = { hd: null, f1: null };
+
+    // The pad's breakdown is only meaningful when the points came from it.
+    // Points typed by hand, or solved from a hit factor, carry no breakdown.
+    var typedPoints = el('cpts').value.trim() !== '';
+    if (hits.length || !typedPoints) {
+      var c = counts();
+      out.hd = { C: c.C, D: c.D, M: c.M, N: c.N };
+    }
+
+    // Only claim a first shot time when the time being saved is actually one
+    // of the shots in the timer's current string - otherwise it would be
+    // borrowed from whoever shot last.
+    if (shots.length) {
+      var tv = el('ctime').value.trim();
+      for (var i = 0; i < shots.length; i++) {
+        if (shots[i].cum.toFixed(2) === tv) { out.f1 = shots[0].cum; break; }
+      }
+    }
+    return out;
+  }
+
+  // "5A 2C 1NS" - alphas derived from the round count, the rest as tapped.
+  function breakdown(e, rounds) {
+    if (!e || !e.hd) return '';
+    var h = e.hd, parts = [];
+    var a = Math.max(0, (rounds || 0) - (h.C || 0) - (h.D || 0) - (h.M || 0));
+    if (rounds > 0) parts.push(a + 'A');
+    if (h.C) parts.push(h.C + 'C');
+    if (h.D) parts.push(h.D + 'D');
+    if (h.M) parts.push(h.M + 'M');
+    if (h.N) parts.push(h.N + 'NS');
+    return parts.join(' ');
+  }
+
   el('save').addEventListener('click', function () {
     if (!(cur.hf > 0)) return;
     var typed = el('cname').value.trim();
@@ -1039,7 +1080,11 @@
       });
       resetForm();
     } else {
-      stage().entries.push({ id: uid(), sid: rec.id, name: rec.name, t: cur.t, p: Math.round(cur.p), hf: cur.hf });
+      var run = { id: uid(), sid: rec.id, name: rec.name, t: cur.t, p: Math.round(cur.p), hf: cur.hf };
+      var extra = runExtras();
+      if (extra.hd) run.hd = extra.hd;
+      if (extra.f1) run.f1 = extra.f1;
+      stage().entries.push(run);
       // Keep the shooter for their next run; reset the score to a clean sheet.
       hits = [];
       lastPH = 'points';
@@ -1176,7 +1221,14 @@
             if (!e || typeof e !== 'object') return null;
             // A sid from another phone means nothing here; adoptShooters
             // re-resolves every imported run against the local roster by name.
-            return { name: str(e.name, 40) || 'Unnamed', t: fin(e.t), p: Math.round(fin(e.p)), hf: fin(e.hf) };
+            var o = { name: str(e.name, 40) || 'Unnamed', t: fin(e.t), p: Math.round(fin(e.p)), hf: fin(e.hf) };
+            if (e.hd && typeof e.hd === 'object') {
+              var cap = function (v) { return Math.max(0, Math.min(200, Math.round(fin(v)))); };
+              o.hd = { C: cap(e.hd.C), D: cap(e.hd.D), M: cap(e.hd.M), N: cap(e.hd.N) };
+            }
+            var f = fin(e.f1);
+            if (f > 0 && f < 1000) o.f1 = f;
+            return o;
           }).filter(function (e) { return e && e.hf > 0; })
         };
       }).filter(Boolean)
@@ -1335,7 +1387,10 @@
         return {
           name: st.name, rounds: st.rounds,
           entries: st.entries.map(function (e) {
-            return { sid: e.sid || null, name: runName(e), t: e.t, p: e.p, hf: e.hf };
+            var o = { sid: e.sid || null, name: runName(e), t: e.t, p: e.p, hf: e.hf };
+            if (e.hd) o.hd = { C: e.hd.C, D: e.hd.D, M: e.hd.M, N: e.hd.N };
+            if (e.f1) o.f1 = e.f1;
+            return o;
           })
         };
       })
@@ -1450,11 +1505,17 @@
       var sorted = st.entries.slice().sort(function (a, b) { return b.hf - a.hf; });
       var top = sorted[0].hf;
       sorted.forEach(function (e) {
+        var bits = [e.p + ' pts'];
+        var bd = breakdown(e, st.rounds);
+        if (bd) bits.push(bd);
+        if (e.f1) bits.push('1st ' + e.f1.toFixed(2));
         var r = document.createElement('div');
         r.className = 'rn';
-        r.innerHTML = '<span class="who"></span><span class="hf">' + e.hf.toFixed(2) +
-          '</span><span class="pc">' + (top > 0 ? (e.hf / top * 100).toFixed(0) : '0') + '%</span>';
-        r.querySelector('.who').textContent = e.name + '  ' + e.t.toFixed(2) + 's';
+        r.innerHTML = '<span class="who"><span class="l1"></span><span class="l2"></span></span>' +
+          '<span class="hf">' + e.hf.toFixed(2) + '</span>' +
+          '<span class="pc">' + (top > 0 ? (e.hf / top * 100).toFixed(1) : '0.0') + '%</span>';
+        r.querySelector('.l1').textContent = e.name + '  ' + e.t.toFixed(2) + 's';
+        r.querySelector('.l2').textContent = bits.join('  \u00b7  ');
         wrap.appendChild(r);
       });
     });
@@ -1467,7 +1528,7 @@
         var d = document.createElement('div');
         d.className = 'rn';
         d.innerHTML = '<span class="who"></span><span class="hf">' + r.pts.toFixed(1) +
-          '</span><span class="pc">' + (rows[0].pts > 0 ? (r.pts / rows[0].pts * 100).toFixed(0) : '0') + '%</span>';
+          '</span><span class="pc">' + (rows[0].pts > 0 ? (r.pts / rows[0].pts * 100).toFixed(1) : '0.0') + '%</span>';
         d.querySelector('.who').textContent = r.name;
         wrap.appendChild(d);
       });

@@ -55,6 +55,21 @@ don't earn several shares.
 
 Saves a day's shooting as a session and keeps it to look back on.
 
+Opening a session shows each run as time, hit factor and share of the stage
+winner, with points, the hit breakdown and the first shot time underneath.
+
+The breakdown reads as alphas first — derived from the round count, since the
+pad only records what was dropped — then charlies, deltas, mikes and
+no-shoots: `35 pts · 5A 2C 1NS · 1st 1.42`.
+
+Two things are recorded only when they are genuinely known, and simply left
+off otherwise. A breakdown is kept when the points came from the tap pad; if
+you typed a points total, or it was solved from a hit factor, there is nothing
+to show and nothing is invented. A first shot time is kept only when the time
+being saved is one of the shots in the timer's current string — otherwise it
+would be borrowed from whoever shot last. Runs recorded before this existed
+show points alone.
+
 **Save session** snapshots the whole board — every stage, its round count and
 every run — under a name, defaulting to today's date. It then offers to clear
 the runs so you can start fresh, keeping stage names and round counts since

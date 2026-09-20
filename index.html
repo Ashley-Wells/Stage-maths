@@ -192,6 +192,16 @@
 
   .build { font-size: 11px; color: var(--soft); text-align: center; opacity: .55; margin: 18px 0 4px; }
 
+  .tmrbar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: -2px 0 12px; }
+  .tmrbar .step { flex: none; width: 38px; padding: 8px 0; text-align: center; font-size: 17px; line-height: 1; }
+  .tmrbar .step[disabled] { opacity: .35; }
+  .tmrbar #shotAuto { flex: none; }
+  .tmrbar #shotAuto[aria-pressed="true"] { background: var(--accent); color: var(--bg); border-color: var(--accent); }
+  .tmrinfo { flex: 1 1 100%; order: 3; font-size: 12px; color: var(--soft); font-variant-numeric: tabular-nums; }
+  .pill { flex: none; margin-left: auto; font-size: 11.5px; font-weight: 600; padding: 4px 10px;
+    border-radius: 999px; background: var(--raised); color: var(--soft); white-space: nowrap; }
+  .pill.on { background: var(--accent-bg); color: var(--accent); }
+
   @keyframes bump { 0% { transform: scale(1); } 40% { transform: scale(1.05); } 100% { transform: scale(1); } }
   .bump { animation: bump 260ms ease-out; }
   button:focus-visible, input:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
@@ -250,6 +260,13 @@
       <div class="field">
         <label for="ctime">Time called</label>
         <input type="number" id="ctime" value="18" placeholder="—" min="0" max="300" step="0.01" inputmode="decimal">
+      </div>
+      <div class="tmrbar">
+        <button type="button" class="ghost step" id="shotBack" aria-label="Previous shot">&lsaquo;</button>
+        <button type="button" class="ghost" id="shotAuto" aria-pressed="false">Auto</button>
+        <button type="button" class="ghost step" id="shotFwd" aria-label="Next shot">&rsaquo;</button>
+        <span class="pill" id="tmrChip">No timer</span>
+        <span class="tmrinfo" id="tmrInfo"></span>
       </div>
       <div class="field">
         <label for="chfIn">Hit factor</label>
@@ -367,12 +384,16 @@
 <script>
 (function () {
   var el = function (id) { return document.getElementById(id); };
-  var BUILD = 'v14';  // bump with CACHE in sw.js
+  var BUILD = 'v15';  // bump with CACHE in sw.js
   el('build').textContent = 'build ' + BUILD;
   var KEY = 'stage-maths:match:v1';
 
   var state = { major: false, active: 0, stages: [] };
   var hits = [], lastPH = 'points', editingId = null;
+  // Timer feed into the Stage tab. auto is the user's setting; held is set when
+  // they step with the arrows or type a time, and released by the next start beep,
+  // so excluding a stray neighbour shot sticks for this string but not the next.
+  var shots = [], shotIdx = -1, auto = false, held = false, bleOn = false;
   var cur = { hf: 0, t: 0, p: 0 };
   var prev = {};
 
@@ -709,6 +730,7 @@
 
   el('cpts').addEventListener('input', function () { lastPH = 'points'; hits = []; paintPad(); });
   el('chfIn').addEventListener('input', function () { lastPH = 'hf'; });
+  el('ctime').addEventListener('input', function () { held = true; renderTimerBar(); });
   ['ctime', 'cpts', 'chfIn'].forEach(function (id) { el(id).addEventListener('input', update); });
 
   Array.prototype.forEach.call(document.querySelectorAll('input[type=number]'), function (i) {
@@ -719,6 +741,54 @@
   });
 
   var TABS = ['stage', 'overall', 'timer'];
+  function renderTimerBar() {
+    var chip = el('tmrChip'), info = el('tmrInfo');
+    chip.textContent = bleOn ? 'Timer on' : 'No timer';
+    chip.className = 'pill' + (bleOn ? ' on' : '');
+    el('shotAuto').setAttribute('aria-pressed', String(auto));
+    el('shotBack').disabled = shotIdx <= 0;
+    el('shotFwd').disabled = shotIdx < 0 || shotIdx >= shots.length - 1;
+    if (!shots.length) { info.textContent = bleOn ? 'Waiting for the beep' : ''; return; }
+    var first = shots[0].cum.toFixed(2);
+    var n = shots.length;
+    // Only claim a shot is selected when the field actually holds that shot's
+    // time - otherwise a hand-typed value would be labelled as a shot.
+    var picked = shotIdx >= 0 && shotIdx !== n - 1 && shots[shotIdx] &&
+      el('ctime').value.trim() === shots[shotIdx].cum.toFixed(2);
+    info.textContent = picked
+      ? 'Shot ' + (shotIdx + 1) + ' of ' + n + ' \u00b7 1st ' + first
+      : n + (n === 1 ? ' shot' : ' shots') + ' \u00b7 1st ' + first;
+  }
+
+  function applyShot() {
+    if (shotIdx < 0 || !shots[shotIdx]) return;
+    el('ctime').value = shots[shotIdx].cum.toFixed(2);
+    lastPH = 'points';
+    update();
+  }
+
+  function stepShot(d) {
+    if (!shots.length) return;
+    var next = shotIdx < 0 ? shots.length - 1 : shotIdx + d;
+    if (next < 0 || next > shots.length - 1) return;
+    shotIdx = next;
+    held = true;
+    applyShot();
+    renderTimerBar();
+  }
+
+  el('shotBack').addEventListener('click', function () { stepShot(-1); });
+  el('shotFwd').addEventListener('click', function () { stepShot(1); });
+
+  el('shotAuto').addEventListener('click', function () {
+    auto = !auto;
+    if (auto) {
+      held = false;
+      if (shots.length) { shotIdx = shots.length - 1; applyShot(); }
+    }
+    renderTimerBar();
+  });
+
   function setTab(name) {
     TABS.forEach(function (t) {
       var cap = t.charAt(0).toUpperCase() + t.slice(1);
@@ -817,8 +887,6 @@
   // string counter. It was validated as a footer once and silently rejected
   // every packet of the second string. Do not constrain it again without
   // captures that prove what it is.
-  var shots = [];
-
   function parseAmg(dv) {
     if (dv.byteLength !== 14) return null;
     if (dv.getUint8(0) !== 0x01) return null;
@@ -847,20 +915,25 @@
 
   function clearShots() {
     shots = [];
+    shotIdx = -1;
     el('bleTime').value = '';
     renderShots();
+    renderTimerBar();
   }
 
   function onShotPacket(dv) {
     var p = parseAmg(dv);
     if (!p) return;
     el('bleShotsCard').hidden = false;
-    if (p.start) { clearShots(); return; }
+    if (p.start) { held = false; clearShots(); return; }
     var last = shots[shots.length - 1];
     if (last && last.n === p.n && last.cum === p.cum) return;  // BLE can redeliver
     shots.push(p);
     el('bleTime').value = p.cum.toFixed(2);
+    if (auto && !held) { shotIdx = shots.length - 1; applyShot(); }
+    else if (shotIdx < 0) shotIdx = shots.length - 1;
     renderShots();
+    renderTimerBar();
   }
 
   el('bleReset').addEventListener('click', clearShots);
@@ -876,12 +949,16 @@
         d.addEventListener('gattserverdisconnected', function () {
           bleLog('Disconnected.');
           el('bleDisconnect').hidden = true;
+          bleOn = false;
+          renderTimerBar();
         });
         return d.gatt.connect();
       })
       .then(function (server) {
         bleLog('Connected. Reading services.');
         el('bleDisconnect').hidden = false;
+        bleOn = true;
+        renderTimerBar();
         return server.getPrimaryService(svc);
       })
       .then(function (service) { return service.getCharacteristics(); })
@@ -933,6 +1010,8 @@
   el('bleDisconnect').addEventListener('click', function () {
     if (bleDevice && bleDevice.gatt.connected) bleDevice.gatt.disconnect();
     el('bleDisconnect').hidden = true;
+    bleOn = false;
+    renderTimerBar();
   });
 
   el('bleClear').addEventListener('click', function () { el('bleLog').textContent = ''; });
@@ -998,6 +1077,8 @@
     if (!isFinite(v) || v <= 0) return;
     el('ctime').value = v.toFixed(2);
     lastPH = 'points';
+    held = true;
+    renderTimerBar();
     setTab('stage');
     update();
   });
@@ -1021,6 +1102,7 @@
   el('bMajor').setAttribute('aria-pressed', String(state.major));
   syncStageFields();
   paintPad();
+  renderTimerBar();
   update();
   prev.ready = true;
 })();

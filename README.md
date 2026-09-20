@@ -18,9 +18,10 @@ with no signal.
 
 ## Stage tab
 
-Each stage carries a name, a round count and, optionally, how far its first
-target was — that last one feeds Draw by distance on the Log tab and can be
-left alone if you don't care.
+Each stage carries a name, a round count and, optionally, what its first
+target was like — distance, and whether it was a partial or had a no-shoot.
+Those last two feed Draw by distance on the Log tab and can be left alone if
+you don't care.
 
 Enter any two of time, hit factor and points and the third is calculated.
 Whichever you touched last is treated as known. The tap pad starts from a
@@ -147,18 +148,24 @@ different scope: it is a personal best, not a comparison.
 ### Draw by distance
 
 The absolute question — "is my draw getting faster" rather than "faster than
-Craig". A stage records how far its first target was, as a bucket: 5 / 7 / 10
-/ 15 / 20 / 25 m+, one tap beside the round count. Draws are then grouped by
-bucket, showing each shooter's average, their best on record and their most
-recent session's average.
+Craig". A stage records its first target as a distance bucket — ≤3 / 5 / 7 /
+10 / 15 / 20 / 25 m+ — and whether it was a **partial or no-shoot**, both a
+tap beside the round count. Draws are grouped by that, showing each shooter's
+average, their best on record and their most recent session's average.
+
+A restricted target is never averaged with a clear one at the same distance,
+because they are not the same draw. One flag rather than separate partial and
+no-shoot settings: two groups per distance keeps the averages populated where
+four would spread them too thin. The distinction earns its place — it is
+entirely normal for one shooter to be quicker on open targets and the other
+quicker when the target is tight, which a blended average hides completely.
 
 Buckets are coarse deliberately. Exact metres would put every stage in its own
 bucket and nothing would ever group with anything else.
 
-Two honest limits. Distance does not capture presentation, so a partial at 10 m
-sits alongside an open target at 10 m — if that starts to bite, the fix is a
-difficulty flag, not finer distances. And a stage with no distance set is
-simply left out, so this fills up only as fast as you tag stages.
+Both fields are optional and default to unset; a stage with no distance is
+left out entirely rather than pooled, so this fills up only as fast as you tag
+stages.
 
 ### Backup
 

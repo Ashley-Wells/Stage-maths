@@ -304,8 +304,9 @@
         <label for="rounds">Round count</label>
         <input type="number" id="rounds" value="24" min="1" max="60" step="1" inputmode="numeric">
       </div>
-      <p class="hint" style="margin-bottom:6px">First target distance &mdash; for comparing draws</p>
+      <p class="hint" style="margin-bottom:6px">First target &mdash; for comparing draws</p>
       <div class="chips who" id="distChips"></div>
+      <div class="chips who" id="hardChips"></div>
       <div class="headrow">
         <p class="hint" id="ptsHint">120 points on offer</p>
         <button type="button" class="ghost" id="delStage">Delete stage</button>
@@ -515,7 +516,7 @@
 <script>
 (function () {
   var el = function (id) { return document.getElementById(id); };
-  var BUILD = 'v23';  // bump with CACHE in sw.js
+  var BUILD = 'v24';  // bump with CACHE in sw.js
   el('build').textContent = 'build ' + BUILD;
   // v1 is still read but never written again, so a bad migration cannot destroy
   // a match that already exists. Delete nothing; just stop writing to it.
@@ -537,9 +538,12 @@
   function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
   // Coarse on purpose: exact metres would make every stage its own bucket
   // and nothing would ever group with anything else.
-  var DISTS = [5, 7, 10, 15, 20, 25];
-  function distLabel(d) { return d === 25 ? '25m+' : d + 'm'; }
-  function newStage(n) { return { id: uid(), name: 'Stage ' + n, rounds: 24, dist: null, entries: [] }; }
+  var DISTS = [3, 5, 7, 10, 15, 20, 25];
+  function distLabel(d) { return d === 25 ? '25m+' : (d === 3 ? '\u22643m' : d + 'm'); }
+  // One flag rather than separate partial and no-shoot settings: two groups per
+  // distance keeps averages populated, where four would spread them too thin.
+  function groupLabel(d, hard) { return distLabel(d) + (hard ? ' \u00b7 partial or no-shoot' : ''); }
+  function newStage(n) { return { id: uid(), name: 'Stage ' + n, rounds: 24, dist: null, hard: false, entries: [] }; }
   function stage() { return state.stages[state.active]; }
 
   function load() {
@@ -1009,6 +1013,19 @@
       b.addEventListener('click', function () { stage().dist = d; persist(); renderDistChips(); });
       c.appendChild(b);
     });
+
+    var h = el('hardChips');
+    h.innerHTML = '';
+    var t = document.createElement('button');
+    t.type = 'button';
+    t.textContent = 'Partial or no-shoot';
+    t.setAttribute('aria-pressed', String(!!stage().hard));
+    t.addEventListener('click', function () {
+      stage().hard = !stage().hard;
+      persist(); renderDistChips();
+    });
+    h.appendChild(t);
+    h.hidden = !cur;   // only meaningful once a distance is set
   }
 
   function update() {
@@ -1261,6 +1278,7 @@
           name: str(st.name, 40) || 'Stage',
           rounds: Math.max(1, Math.min(200, Math.round(fin(st.rounds)) || 24)),
           dist: DISTS.indexOf(Math.round(fin(st.dist))) >= 0 ? Math.round(fin(st.dist)) : null,
+          hard: !!st.hard,
           entries: (Array.isArray(st.entries) ? st.entries : []).slice(0, 300).map(function (e) {
             if (!e || typeof e !== 'object') return null;
             // A sid from another phone means nothing here; adoptShooters
@@ -1429,7 +1447,7 @@
       major: !!state.major,
       stages: state.stages.map(function (st) {
         return {
-          name: st.name, rounds: st.rounds, dist: st.dist || null,
+          name: st.name, rounds: st.rounds, dist: st.dist || null, hard: !!st.hard,
           entries: st.entries.map(function (e) {
             var o = { sid: e.sid || null, name: runName(e), t: e.t, p: e.p, hf: e.hf };
             if (e.hd) o.hd = { C: e.hd.C, D: e.hd.D, M: e.hd.M, N: e.hd.N };
@@ -1671,28 +1689,37 @@
       var when = new Date(ss.date).getTime() || 0;
       (ss.stages || []).forEach(function (st) {
         if (!st.dist) return;
+        // Clear and restricted targets at the same distance are different
+        // draws, so they never share an average.
+        var bk = st.dist + (st.hard ? 'h' : 'c');
         (st.entries || []).forEach(function (e) {
           if (!(e.f1 > 0)) return;
           var k = runKey(e);
-          if (!buckets[st.dist]) buckets[st.dist] = {};
-          var who = buckets[st.dist][k] ||
-            (buckets[st.dist][k] = { name: runName(e), draws: [], last: -1, lastSum: 0, lastN: 0 });
+          if (!buckets[bk]) buckets[bk] = { dist: st.dist, hard: !!st.hard, who: {} };
+          var who = buckets[bk].who[k] ||
+            (buckets[bk].who[k] = { name: runName(e), draws: [], last: -1, lastSum: 0, lastN: 0 });
           who.draws.push(e.f1);
           if (when > who.last) { who.last = when; who.lastSum = 0; who.lastN = 0; }
           if (when === who.last) { who.lastSum += e.f1; who.lastN++; }
         });
       });
     });
-    return DISTS.filter(function (d) { return buckets[d]; }).map(function (d) {
-      var rows = Object.keys(buckets[d]).map(function (k) {
-        var w = buckets[d][k];
-        var sum = 0, best = Infinity;
-        w.draws.forEach(function (v) { sum += v; if (v < best) best = v; });
-        return { name: w.name, n: w.draws.length, avg: sum / w.draws.length, best: best,
-                 latest: w.lastN ? w.lastSum / w.lastN : null };
-      }).sort(function (a, b) { return a.avg - b.avg; });
-      return { dist: d, rows: rows };
+    var out = [];
+    DISTS.forEach(function (d) {
+      [false, true].forEach(function (hard) {
+        var g = buckets[d + (hard ? 'h' : 'c')];
+        if (!g) return;
+        var rows = Object.keys(g.who).map(function (k) {
+          var w = g.who[k];
+          var sum = 0, best = Infinity;
+          w.draws.forEach(function (v) { sum += v; if (v < best) best = v; });
+          return { name: w.name, n: w.draws.length, avg: sum / w.draws.length, best: best,
+                   latest: w.lastN ? w.lastSum / w.lastN : null };
+        }).sort(function (a, b) { return a.avg - b.avg; });
+        out.push({ dist: d, hard: hard, rows: rows });
+      });
     });
+    return out;
   }
 
   function renderDist() {
@@ -1703,7 +1730,7 @@
     box.innerHTML = '';
     groups.forEach(function (g) {
       var h = document.createElement('h4');
-      h.textContent = distLabel(g.dist);
+      h.textContent = groupLabel(g.dist, g.hard);
       box.appendChild(h);
       g.rows.forEach(function (r, i) {
         var bits = [r.n + (r.n === 1 ? ' draw' : ' draws'), 'best ' + r.best.toFixed(2)];
@@ -1720,9 +1747,9 @@
     });
     el('distNote').textContent = 'Average first shot at each distance, fastest first, with the best on ' +
       'record and the most recent session\u2019s average. Only stages that recorded a first target ' +
-      'distance are counted. Distance is coarse on purpose \u2014 exact metres would put every stage in ' +
-      'its own bucket \u2014 and it does not capture presentation, so a partial at 10m sits with an open ' +
-      'target at 10m.';
+      'distance are counted. A partial or no-shoot target is kept apart from a clear one at the same ' +
+      'distance, since they are not the same draw. Distance is coarse on purpose \u2014 exact metres ' +
+      'would put every stage in its own bucket and nothing would group with anything.';
   }
 
   function renderDraw() {

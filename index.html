@@ -69,6 +69,23 @@
   }
   .seg button[aria-pressed="true"] { background: var(--raised); color: var(--ink); box-shadow: 0 1px 2px rgba(0,0,0,.14); }
   .seg.top { background: var(--surface); border: 1px solid var(--line); }
+  .sess { border-top: 1px solid var(--line); padding: 11px 0; }
+  .sess:first-child { border-top: none; }
+  .sess .top { display: flex; align-items: center; gap: 10px; cursor: pointer; }
+  .sess .ttl { flex: 1; min-width: 0; }
+  .sess .ttl b { font-size: 15.5px; font-weight: 600; display: block; }
+  .sess .ttl span { font-size: 12px; color: var(--soft); }
+  .sess .x { flex: none; width: 32px; height: 32px; border-radius: 50%; font: inherit; font-size: 17px;
+    line-height: 1; cursor: pointer; background: transparent; color: var(--soft); border: none; }
+  .sess .body { margin-top: 10px; }
+  .sess h4 { margin: 12px 0 2px; font-size: 13px; font-weight: 600; color: var(--soft); }
+  .rn { display: flex; gap: 10px; font-size: 13.5px; padding: 4px 0; font-variant-numeric: tabular-nums; }
+  .rn .who { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rn .hf { font-weight: 700; }
+  .rn .pc { width: 52px; text-align: right; color: var(--soft); }
+
+  .seg.sm { margin-bottom: 10px; padding: 3px; }
+  .seg.sm button { padding: 7px 0; font-size: 13px; }
 
   .chips { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 4px; margin-bottom: 12px; }
   .chips::-webkit-scrollbar { display: none; }
@@ -226,6 +243,7 @@
     <button type="button" id="tabStage" aria-pressed="true">Stage</button>
     <button type="button" id="tabOverall" aria-pressed="false">Overall</button>
     <button type="button" id="tabTimer" aria-pressed="false">Timer</button>
+    <button type="button" id="tabLog" aria-pressed="false">Log</button>
   </div>
 
   <div id="viewStage">
@@ -298,6 +316,10 @@
       <div class="headrow">
         <p class="lead">Stage standings</p>
         <button type="button" class="ghost" id="wipe">Clear</button>
+      </div>
+      <div class="seg sm" role="group" aria-label="Standings mode">
+        <button type="button" id="mAll" aria-pressed="true">All runs</button>
+        <button type="button" id="mBest" aria-pressed="false">Best each</button>
       </div>
       <div id="stand"></div>
     </div>
@@ -379,12 +401,36 @@
   </div>
 </div>
 
+  <div id="viewLog" hidden>
+    <div class="card">
+      <p class="lead">Save this session</p>
+      <div class="field">
+        <label for="sessName">Name</label>
+        <input type="text" id="sessName" placeholder="date" autocomplete="off">
+      </div>
+      <p class="hint" id="sessHint"></p>
+      <button type="button" id="sessSave" class="primary">Save session</button>
+    </div>
+
+    <div class="card" id="h2hCard" hidden>
+      <p class="lead">Head to head</p>
+      <div id="h2h"></div>
+      <p class="hint" id="h2hNote"></p>
+    </div>
+
+    <div class="card">
+      <p class="lead">Past sessions</p>
+      <div id="sessList"></div>
+    </div>
+  </div>
+</div>
+
 <p class="build" id="build"></p>
 
 <script>
 (function () {
   var el = function (id) { return document.getElementById(id); };
-  var BUILD = 'v15';  // bump with CACHE in sw.js
+  var BUILD = 'v16';  // bump with CACHE in sw.js
   el('build').textContent = 'build ' + BUILD;
   var KEY = 'stage-maths:match:v1';
 
@@ -410,6 +456,7 @@
       }
     } catch (e) {}
     if (!state.stages.length) state.stages = [newStage(1)];
+    if (state.standMode !== 'best') state.standMode = 'all';
     if (!(state.active >= 0) || state.active >= state.stages.length) state.active = 0;
   }
   function persist() { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {} }
@@ -423,22 +470,49 @@
     for (var i = 0; i < hits.length; i++) c[hits[i]]++;
     return c;
   }
+  // "dave", "Dave" and " Dave  S " group together; "Dave S" stays its own person.
+  function nameKey(n) { return (n || 'Unnamed').trim().replace(/\s+/g, ' ').toLowerCase(); }
+  function nameOf(n) { return (n || '').trim().replace(/\s+/g, ' ') || 'Unnamed'; }
+
+  // Group a stage's runs by shooter: best run, average hit factor, run count.
+  function byShooter(entries) {
+    var m = {}, order = [];
+    (entries || []).forEach(function (e) {
+      if (!(e.hf > 0)) return;
+      var k = nameKey(e.name);
+      if (!m[k]) { m[k] = { name: nameOf(e.name), runs: 0, sum: 0, best: e }; order.push(k); }
+      m[k].runs++;
+      m[k].sum += e.hf;
+      if (e.hf > m[k].best.hf) m[k].best = e;
+    });
+    return order.map(function (k) {
+      var g = m[k];
+      g.avg = g.sum / g.runs;
+      g.hf = g.best.hf;
+      return g;
+    });
+  }
+
   function best(list) {
     var b = null;
     (list || []).forEach(function (x) { if (!b || x.hf > b.hf) b = x; });
     return b;
   }
 
-  function overallTable() {
+  // Match points across a set of stages. A shooter scores once per stage, on
+  // their best run - several practice runs must not earn several shares.
+  function overallTable(stages) {
     var byName = {};
-    state.stages.forEach(function (st) {
-      var b = best(st.entries);
-      if (!b || b.hf <= 0) return;
+    (stages || state.stages).forEach(function (st) {
+      var groups = byShooter(st.entries);
+      var top = 0;
+      groups.forEach(function (g) { if (g.hf > top) top = g.hf; });
+      if (top <= 0) return;
       var avail = maxPts(st);
-      st.entries.forEach(function (e) {
-        var k = (e.name || 'Unnamed').trim().toLowerCase();
-        if (!byName[k]) byName[k] = { name: e.name || 'Unnamed', pts: 0, stages: 0 };
-        byName[k].pts += (e.hf / b.hf) * avail;
+      groups.forEach(function (g) {
+        var k = nameKey(g.name);
+        if (!byName[k]) byName[k] = { name: g.name, pts: 0, stages: 0 };
+        byName[k].pts += (g.hf / top) * avail;
         byName[k].stages++;
       });
     });
@@ -532,11 +606,33 @@
   function renderStand() {
     var card = el('standCard'), list = el('stand');
     var entries = stage().entries;
+    el('mAll').setAttribute('aria-pressed', String(state.standMode !== 'best'));
+    el('mBest').setAttribute('aria-pressed', String(state.standMode === 'best'));
     if (!entries.length) { card.hidden = true; list.innerHTML = ''; return; }
     card.hidden = false;
+    list.innerHTML = '';
+
+    if (state.standMode === 'best') {
+      var groups = byShooter(entries).sort(function (a, b) { return b.hf - a.hf; });
+      if (!groups.length) { card.hidden = true; return; }
+      var gtop = groups[0].hf;
+      groups.forEach(function (g, i) {
+        var gp = gtop > 0 ? (g.hf / gtop) * 100 : 0;
+        var grow = document.createElement('div');
+        grow.className = 'st' + (i === 0 ? ' lead' : '');
+        grow.style.cursor = 'default';
+        grow.innerHTML = '<span class="rk">' + (i + 1) + '</span>' +
+          '<div class="who"><div class="nm"></div><div class="meta">' +
+            g.runs + (g.runs === 1 ? ' run' : ' runs') + ' \u00b7 avg ' + g.avg.toFixed(2) + '</div></div>' +
+          '<div class="sc"><div class="sh">' + g.hf.toFixed(2) + '</div><div class="pc">' + gp.toFixed(1) + '%</div></div>';
+        grow.querySelector('.nm').textContent = g.name;
+        list.appendChild(grow);
+      });
+      return;
+    }
+
     var sorted = entries.slice().sort(function (a, b) { return b.hf - a.hf; });
     var top = sorted[0].hf;
-    list.innerHTML = '';
     sorted.forEach(function (x, i) {
       var pct = top > 0 ? (x.hf / top) * 100 : 0;
       var row = document.createElement('div');
@@ -556,6 +652,14 @@
       list.appendChild(row);
     });
   }
+
+  function setStandMode(m) {
+    state.standMode = m;
+    if (m === 'best' && editingId) resetForm();
+    persist(); update();
+  }
+  el('mAll').addEventListener('click', function () { setStandMode('all'); });
+  el('mBest').addEventListener('click', function () { setStandMode('best'); });
 
   function renderOverall() {
     var rows = overallTable();
@@ -680,8 +784,10 @@
       resetForm();
     } else {
       stage().entries.push({ id: uid(), name: name, t: cur.t, p: Math.round(cur.p), hf: cur.hf });
-      el('cname').value = '';
-      hits = []; paintPad();
+      // Keep the shooter for their next run; reset the score to a clean sheet.
+      hits = [];
+      lastPH = 'points';
+      syncPoints();
     }
     persist(); update();
   });
@@ -740,7 +846,101 @@
     i.addEventListener('mouseup', function (e) { e.preventDefault(); });
   });
 
-  var TABS = ['stage', 'overall', 'timer'];
+  // Saved practice sessions. Separate key from the live board, so nothing here
+  // can corrupt a match in progress and no migration was needed to add it.
+  var SESS_KEY = 'stage-maths:sessions:v1';
+  var sessions = [];
+  var openSess = null;
+
+  function loadSessions() {
+    try {
+      var raw = localStorage.getItem(SESS_KEY);
+      var o = raw ? JSON.parse(raw) : null;
+      sessions = Array.isArray(o) ? o : [];
+    } catch (e) { sessions = []; }
+  }
+  function persistSessions() {
+    try { localStorage.setItem(SESS_KEY, JSON.stringify(sessions)); return true; }
+    catch (e) { return false; }
+  }
+
+  var MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  function fmtDate(d) {
+    return isFinite(d) ? d.getDate() + ' ' + MON[d.getMonth()] + ' ' + d.getFullYear() : '';
+  }
+  function today() { return fmtDate(new Date()); }
+  function runCount(stages) {
+    var n = 0;
+    stages.forEach(function (st) { n += st.entries.length; });
+    return n;
+  }
+
+  function snapshot() {
+    return {
+      id: uid(),
+      name: el('sessName').value.trim() || today(),
+      date: new Date().toISOString(),
+      major: !!state.major,
+      stages: state.stages.map(function (st) {
+        return {
+          name: st.name, rounds: st.rounds,
+          entries: st.entries.map(function (e) {
+            return { name: nameOf(e.name), t: e.t, p: e.p, hf: e.hf };
+          })
+        };
+      })
+    };
+  }
+
+  el('sessSave').addEventListener('click', function () {
+    var n = runCount(state.stages);
+    if (!n) { alert('Nothing to save yet - no runs on the board.'); return; }
+    sessions.push(snapshot());
+    if (!persistSessions()) {
+      sessions.pop();
+      alert('Could not save. This browser is refusing to store data.');
+      return;
+    }
+    el('sessName').value = '';
+    if (confirm('Saved. Clear the runs so you can start a fresh session?\n\nStage names and round counts are kept.')) {
+      state.stages.forEach(function (st) { st.entries = []; });
+      resetForm();
+      persist();
+    }
+    renderLog();
+    update();
+  });
+
+  // Head to head across every saved session. Hit factor is not comparable
+  // between different stages, so each shooter is scored as a percentage of
+  // that stage's winner and those percentages are averaged. Stages with only
+  // one shooter are skipped - being 100% of yourself says nothing.
+  function headToHead() {
+    var m = {}, stagesUsed = 0;
+    sessions.forEach(function (ss) {
+      (ss.stages || []).forEach(function (st) {
+        var groups = byShooter(st.entries);
+        if (groups.length < 2) return;
+        var top = 0;
+        groups.forEach(function (g) { if (g.hf > top) top = g.hf; });
+        if (top <= 0) return;
+        stagesUsed++;
+        groups.forEach(function (g) {
+          var k = nameKey(g.name);
+          if (!m[k]) m[k] = { name: g.name, stages: 0, sum: 0, wins: 0, runs: 0 };
+          m[k].stages++;
+          m[k].sum += (g.hf / top) * 100;
+          m[k].runs += g.runs;
+          if (g.hf >= top) m[k].wins++;
+        });
+      });
+    });
+    var rows = Object.keys(m).map(function (k) { var r = m[k]; r.avg = r.sum / r.stages; return r; });
+    rows.sort(function (a, b) { return b.avg - a.avg; });
+    return { rows: rows, stages: stagesUsed };
+  }
+
+  var TABS = ['stage', 'overall', 'timer', 'log'];
   function renderTimerBar() {
     var chip = el('tmrChip'), info = el('tmrInfo');
     chip.textContent = bleOn ? 'Timer on' : 'No timer';
@@ -789,6 +989,108 @@
     renderTimerBar();
   });
 
+  function sessDetail(ss) {
+    var wrap = document.createElement('div');
+    wrap.className = 'body';
+    (ss.stages || []).forEach(function (st) {
+      if (!st.entries.length) return;
+      var h = document.createElement('h4');
+      h.textContent = st.name + '  \u00b7  ' + st.rounds + ' rounds';
+      wrap.appendChild(h);
+      var sorted = st.entries.slice().sort(function (a, b) { return b.hf - a.hf; });
+      var top = sorted[0].hf;
+      sorted.forEach(function (e) {
+        var r = document.createElement('div');
+        r.className = 'rn';
+        r.innerHTML = '<span class="who"></span><span class="hf">' + e.hf.toFixed(2) +
+          '</span><span class="pc">' + (top > 0 ? (e.hf / top * 100).toFixed(0) : '0') + '%</span>';
+        r.querySelector('.who').textContent = e.name + '  ' + e.t.toFixed(2) + 's';
+        wrap.appendChild(r);
+      });
+    });
+    var rows = overallTable(ss.stages);
+    if (rows.length > 1) {
+      var h2 = document.createElement('h4');
+      h2.textContent = 'Session total';
+      wrap.appendChild(h2);
+      rows.forEach(function (r) {
+        var d = document.createElement('div');
+        d.className = 'rn';
+        d.innerHTML = '<span class="who"></span><span class="hf">' + r.pts.toFixed(1) +
+          '</span><span class="pc">' + (rows[0].pts > 0 ? (r.pts / rows[0].pts * 100).toFixed(0) : '0') + '%</span>';
+        d.querySelector('.who').textContent = r.name;
+        wrap.appendChild(d);
+      });
+    }
+    return wrap;
+  }
+
+  function renderLog() {
+    el('sessName').placeholder = today();
+    var n = runCount(state.stages);
+    el('sessHint').textContent = n
+      ? n + (n === 1 ? ' run' : ' runs') + ' across ' + state.stages.length +
+        (state.stages.length === 1 ? ' stage' : ' stages') + ' on the board'
+      : 'Nothing on the board yet.';
+    el('sessSave').disabled = !n;
+
+    var h = headToHead();
+    el('h2hCard').hidden = h.rows.length < 2;
+    var box = el('h2h');
+    box.innerHTML = '';
+    h.rows.forEach(function (r, i) {
+      var row = document.createElement('div');
+      row.className = 'st' + (i === 0 ? ' lead' : '');
+      row.style.cursor = 'default';
+      row.innerHTML = '<span class="rk">' + (i + 1) + '</span>' +
+        '<div class="who"><div class="nm"></div><div class="meta">' + r.stages +
+          (r.stages === 1 ? ' stage' : ' stages') + ' \u00b7 ' + r.runs +
+          (r.runs === 1 ? ' run' : ' runs') + ' \u00b7 ' + r.wins + ' won</div></div>' +
+        '<div class="sc"><div class="sh">' + r.avg.toFixed(1) + '%</div></div>';
+      row.querySelector('.nm').textContent = r.name;
+      box.appendChild(row);
+    });
+    el('h2hNote').textContent = h.rows.length < 2 ? '' :
+      'Average share of the stage winner across ' + h.stages +
+      (h.stages === 1 ? ' stage' : ' stages') +
+      '. Hit factor does not compare between different stages, so each shooter is scored against whoever won that stage. ' +
+      'Stages only one person shot are left out, and repeat runs count as the shooter\u2019s best.';
+
+    var list = el('sessList');
+    list.innerHTML = '';
+    if (!sessions.length) {
+      list.innerHTML = '<div class="empty">Save a session and it will be here to look back on.</div>';
+      return;
+    }
+    sessions.slice().reverse().forEach(function (ss) {
+      var runs = runCount(ss.stages || []);
+      var stgs = (ss.stages || []).filter(function (st) { return st.entries.length; }).length;
+      var d = new Date(ss.date);
+      var item = document.createElement('div');
+      item.className = 'sess';
+      var head = document.createElement('div');
+      head.className = 'top';
+      head.innerHTML = '<div class="ttl"><b></b><span>' + stgs + (stgs === 1 ? ' stage \u00b7 ' : ' stages \u00b7 ') +
+        runs + (runs === 1 ? ' run \u00b7 ' : ' runs \u00b7 ') + fmtDate(d) +
+        '</span></div><button class="x" type="button" aria-label="Delete session">&times;</button>';
+      head.querySelector('b').textContent = ss.name;
+      head.addEventListener('click', function () {
+        openSess = openSess === ss.id ? null : ss.id;
+        renderLog();
+      });
+      head.querySelector('.x').addEventListener('click', function (ev) {
+        ev.stopPropagation();
+        if (!confirm('Delete "' + ss.name + '"? This cannot be undone.')) return;
+        sessions = sessions.filter(function (x) { return x.id !== ss.id; });
+        persistSessions();
+        renderLog();
+      });
+      item.appendChild(head);
+      if (openSess === ss.id) item.appendChild(sessDetail(ss));
+      list.appendChild(item);
+    });
+  }
+
   function setTab(name) {
     TABS.forEach(function (t) {
       var cap = t.charAt(0).toUpperCase() + t.slice(1);
@@ -796,6 +1098,7 @@
       el('view' + cap).hidden = t !== name;
     });
     if (name === 'overall') renderOverall();
+    if (name === 'log') renderLog();
   }
   TABS.forEach(function (t) {
     var cap = t.charAt(0).toUpperCase() + t.slice(1);
@@ -1098,6 +1401,7 @@
   paintTheme();
 
   load();
+  loadSessions();
   el('bMinor').setAttribute('aria-pressed', String(!state.major));
   el('bMajor').setAttribute('aria-pressed', String(state.major));
   syncStageFields();

@@ -26,6 +26,14 @@ Save each shooter and they join the stage standings, ranked by hit factor
 with each shooter's percentage of the leader. Tap a row to edit it. Names
 autocomplete from everyone entered across the match.
 
+Saving keeps the shooter in the box and resets the score to clean, so a
+practice squad doing run after run can just keep tapping Save.
+
+Standings read two ways. **All runs** lists every run, which is what you want
+when the same people are shooting repeatedly and you're watching for
+improvement. **Best each** collapses to one row per shooter — their best hit
+factor, with run count and average underneath.
+
 The target times underneath aim at the current stage leader — clean, one
 charlie, one delta, one no-shoot, one mike, and a no-shoot plus mike — with
 the time cost of each and a seconds-per-alpha pace figure on the clean row.
@@ -37,6 +45,39 @@ Stages are the chips along the top. Each keeps its own name and round count.
 Match points the way IPSC scores it: on each stage the best hit factor takes
 all the points on offer and everyone else gets their share, summed across
 stages. CSV export lives here.
+
+A shooter scores once per stage, on their best run — several practice runs
+don't earn several shares.
+
+## Log tab
+
+Saves a day's shooting as a session and keeps it to look back on.
+
+**Save session** snapshots the whole board — every stage, its round count and
+every run — under a name, defaulting to today's date. It then offers to clear
+the runs so you can start fresh, keeping stage names and round counts since
+those usually get reused. Tap a session to see each stage's runs ranked, plus
+the session total. Sessions are stored under their own key, separate from the
+live board.
+
+### Head to head
+
+The long-term comparison, across every saved session.
+
+Hit factor does not compare between different stages — a 24 round field
+course and a 12 round short course aren't the same scale — so an average hit
+factor over time would be meaningless if the stages change. Instead each
+shooter is scored as a percentage of whoever won that stage, and those
+percentages are averaged. Stage difficulty cancels out, so the number answers
+"who is ahead, and am I closing the gap".
+
+Two things it deliberately does: stages only one person shot are left out,
+because being 100% of yourself says nothing; and where someone shot a stage
+several times, their best run is used, which is how a match would score them.
+
+Shooters are matched across sessions by name, ignoring case and extra spaces
+— so "dave" and "Dave" are one person, but "Dave S" is another. A proper
+roster with stable IDs is still open work.
 
 ## Timer tab
 
@@ -133,7 +174,9 @@ Check these against your region's current rules before trusting them.
 ## Privacy
 
 Everything is stored in the browser on your own device. No server, no
-accounts, nothing leaves the phone.
+accounts, nothing leaves the phone. That includes saved sessions — they live
+in this browser only, so clearing site data loses them and they don't follow
+you to another phone.
 
 ## Publishing
 

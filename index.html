@@ -175,6 +175,15 @@
     border: 1px solid var(--line); border-radius: var(--r-sm); padding: 10px;
     white-space: pre-wrap; word-break: break-all;
   }
+  .sr { display: flex; align-items: center; gap: 11px; padding: 9px 0; border-top: 1px solid var(--line); }
+  .sr:first-child { border-top: none; }
+  .sr .n { flex: none; width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center;
+    font-size: 12px; font-weight: 700; background: var(--raised); color: var(--soft); }
+  .sr.last .n { background: var(--accent); color: var(--bg); }
+  .sr .sp { flex: 1; font-size: 13px; color: var(--soft); font-variant-numeric: tabular-nums; }
+  .sr .cu { font-size: 19px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .sr.last .cu { color: var(--accent); }
+
   .chr { font-size: 12.5px; color: var(--soft); padding: 7px 0; border-top: 1px solid var(--line); }
   .chr:first-child { border-top: none; }
   .chr b { color: var(--ink); font-weight: 600; font-family: ui-monospace, monospace; }
@@ -305,6 +314,19 @@
       <div id="bleChars"></div>
     </div>
 
+    <div class="card" id="bleShotsCard" hidden>
+      <div class="headrow">
+        <p class="lead">Shots</p>
+        <button type="button" class="ghost" id="bleReset">Reset</button>
+      </div>
+      <div id="bleShots"></div>
+      <div class="field" style="margin-top:12px">
+        <label for="bleTime">Captured time</label>
+        <input type="number" id="bleTime" placeholder="—" step="0.01" inputmode="decimal">
+      </div>
+      <button type="button" id="bleUse" class="primary">Use this time</button>
+    </div>
+
     <div class="card" id="bleLogCard" hidden>
       <div class="headrow">
         <p class="lead">Incoming data</p>
@@ -312,11 +334,7 @@
         <button type="button" class="ghost" id="bleClear">Clear</button>
       </div>
       <div id="bleLog" class="log"></div>
-      <div class="field" style="margin-top:12px">
-        <label for="bleTime">Captured time</label>
-        <input type="number" id="bleTime" placeholder="—" step="0.01" inputmode="decimal">
-      </div>
-      <button type="button" id="bleUse" class="primary">Use this time</button>
+      <p class="hint">Raw bytes, for working out a different timer.</p>
     </div>
 
     <div class="card">
@@ -781,6 +799,60 @@
     try { localStorage.setItem(SVC_KEY, el('svcUuid').value.trim()); } catch (e) {}
   });
 
+  // AMG Lab Commander frame, confirmed against a real capture:
+  //   01 TT SS SS CCCC PPPP FFFF MMMM 00 03
+  // TT 05 = start beep, 03 = shot. SS shot number. CCCC time from start and
+  // PPPP split from the previous shot, both big-endian centiseconds. FFFF is
+  // the first shot time, constant across a string. MMMM mirrored CCCC in the
+  // capture we have; unconfirmed, so unused.
+  var shots = [];
+
+  function parseAmg(dv) {
+    if (dv.byteLength !== 14) return null;
+    if (dv.getUint8(0) !== 0x01 || dv.getUint8(13) !== 0x03) return null;
+    var t = dv.getUint8(1);
+    if (t === 0x05) return { start: true };
+    if (t !== 0x03) return null;
+    return { n: dv.getUint8(2), cum: dv.getUint16(4) / 100, split: dv.getUint16(6) / 100 };
+  }
+
+  function renderShots() {
+    var list = el('bleShots');
+    list.innerHTML = '';
+    if (!shots.length) {
+      list.innerHTML = '<div class="empty">Waiting for the beep.</div>';
+      return;
+    }
+    shots.forEach(function (x, i) {
+      var row = document.createElement('div');
+      row.className = 'sr' + (i === shots.length - 1 ? ' last' : '');
+      row.innerHTML = '<span class="n">' + x.n + '</span>' +
+        '<span class="sp">+' + x.split.toFixed(2) + '</span>' +
+        '<span class="cu">' + x.cum.toFixed(2) + '</span>';
+      list.appendChild(row);
+    });
+  }
+
+  function clearShots() {
+    shots = [];
+    el('bleTime').value = '';
+    renderShots();
+  }
+
+  function onShotPacket(dv) {
+    var p = parseAmg(dv);
+    if (!p) return;
+    el('bleShotsCard').hidden = false;
+    if (p.start) { clearShots(); return; }
+    var last = shots[shots.length - 1];
+    if (last && last.n === p.n && last.cum === p.cum) return;  // BLE can redeliver
+    shots.push(p);
+    el('bleTime').value = p.cum.toFixed(2);
+    renderShots();
+  }
+
+  el('bleReset').addEventListener('click', clearShots);
+
   el('bleConnect').addEventListener('click', function () {
     var svc = parseUuid(el('svcUuid').value);
     if (svc === null) { bleLog('Enter a service UUID first.'); return; }
@@ -828,6 +900,7 @@
             c.addEventListener('characteristicvaluechanged', function (ev) {
               var dv = ev.target.value;
               bleLog(short + '  [' + dv.byteLength + ']  ' + hex(dv) + '\n        "' + ascii(dv) + '"');
+              onShotPacket(dv);
             });
             return c.startNotifications()
               .then(function () { bleLog('Listening on ' + short); })
@@ -837,7 +910,11 @@
         });
         return Promise.all(jobs);
       })
-      .then(function () { bleLog('Ready. Run the timer and watch the bytes.'); })
+      .then(function () {
+        bleLog('Ready. Run the timer.');
+        el('bleShotsCard').hidden = false;
+        renderShots();
+      })
       .catch(function (err) { bleLog('Error: ' + err.message); });
   });
 

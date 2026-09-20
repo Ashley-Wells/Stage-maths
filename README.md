@@ -60,6 +60,25 @@ those usually get reused. Tap a session to see each stage's runs ranked, plus
 the session total. Sessions are stored under their own key, separate from the
 live board.
 
+### Sharing with training partners
+
+**Share** on a saved session builds a link and hands it to whatever you send
+things with. Open it on another phone and that app offers to import the
+session; from then on it counts in their head to head too.
+
+The session is packed into the part of the link after the `#`. Browsers never
+send that to a web server, so the data travels through whichever app you sent
+it with and never touches GitHub. There are no accounts and no server —
+"friends" here just means people you send links to.
+
+One person scorekeeps a day and shares it. Sessions carry an ID, so the same
+link can be forwarded around and imported twice without anyone collecting
+duplicates. An imported session is treated as untrusted: every field is
+type-checked and capped, and names are only ever rendered as text.
+
+Links are typically a few hundred characters. A very large session is refused
+rather than sent as a link too long to survive a messaging app.
+
 ### Head to head
 
 The long-term comparison, across every saved session.

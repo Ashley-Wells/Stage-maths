@@ -75,6 +75,7 @@
   .sess .ttl { flex: 1; min-width: 0; }
   .sess .ttl b { font-size: 15.5px; font-weight: 600; display: block; }
   .sess .ttl span { font-size: 12px; color: var(--soft); }
+  .sess .sh-b { flex: none; padding: 6px 12px; font-size: 12.5px; }
   .sess .x { flex: none; width: 32px; height: 32px; border-radius: 50%; font: inherit; font-size: 17px;
     line-height: 1; cursor: pointer; background: transparent; color: var(--soft); border: none; }
   .sess .body { margin-top: 10px; }
@@ -430,7 +431,7 @@
 <script>
 (function () {
   var el = function (id) { return document.getElementById(id); };
-  var BUILD = 'v16';  // bump with CACHE in sw.js
+  var BUILD = 'v17';  // bump with CACHE in sw.js
   el('build').textContent = 'build ' + BUILD;
   var KEY = 'stage-maths:match:v1';
 
@@ -869,6 +870,120 @@
     return isFinite(d) ? d.getDate() + ' ' + MON[d.getMonth()] + ' ' + d.getFullYear() : '';
   }
   function today() { return fmtDate(new Date()); }
+
+  // Sharing. A session is packed into the URL fragment, which browsers never
+  // send to a web server - so the data travels through whatever app you send
+  // the link with, and never through GitHub Pages.
+  function b64url(bytes) {
+    var s = '';
+    for (var i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i]);
+    return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  }
+  function unb64url(t) {
+    t = String(t).replace(/-/g, '+').replace(/_/g, '/');
+    while (t.length % 4) t += '=';
+    var bin = atob(t), out = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out;
+  }
+
+  function packSession(ss) {
+    var bytes = new TextEncoder().encode(JSON.stringify(ss));
+    if (typeof CompressionStream === 'undefined') return Promise.resolve('B' + b64url(bytes));
+    try {
+      return new Response(new Blob([bytes]).stream().pipeThrough(new CompressionStream('gzip')))
+        .arrayBuffer()
+        .then(function (buf) { return 'A' + b64url(new Uint8Array(buf)); })
+        .catch(function () { return 'B' + b64url(bytes); });
+    } catch (e) { return Promise.resolve('B' + b64url(bytes)); }
+  }
+
+  // A share link is untrusted input heading for stored history, so everything
+  // is coerced to the expected type and capped. Names are only ever written
+  // with textContent, never innerHTML.
+  function cleanSession(json) {
+    var o;
+    try { o = JSON.parse(json); } catch (e) { return null; }
+    if (!o || typeof o !== 'object' || !Array.isArray(o.stages)) return null;
+    var str = function (v, max) { return typeof v === 'string' ? v.slice(0, max) : ''; };
+    var fin = function (v) { return typeof v === 'number' && isFinite(v) ? v : 0; };
+    var out = {
+      id: str(o.id, 40) || uid(),
+      name: str(o.name, 60) || 'Shared session',
+      date: str(o.date, 40) || new Date().toISOString(),
+      major: !!o.major,
+      stages: o.stages.slice(0, 40).map(function (st) {
+        if (!st || typeof st !== 'object') return null;
+        return {
+          name: str(st.name, 40) || 'Stage',
+          rounds: Math.max(1, Math.min(200, Math.round(fin(st.rounds)) || 24)),
+          entries: (Array.isArray(st.entries) ? st.entries : []).slice(0, 300).map(function (e) {
+            if (!e || typeof e !== 'object') return null;
+            return { name: str(e.name, 40) || 'Unnamed', t: fin(e.t), p: Math.round(fin(e.p)), hf: fin(e.hf) };
+          }).filter(function (e) { return e && e.hf > 0; })
+        };
+      }).filter(Boolean)
+    };
+    return out.stages.length ? out : null;
+  }
+
+  function unpackSession(tok) {
+    var kind = String(tok).charAt(0), bytes;
+    try { bytes = unb64url(String(tok).slice(1)); } catch (e) { return Promise.resolve(null); }
+    if (kind === 'B') {
+      try { return Promise.resolve(cleanSession(new TextDecoder().decode(bytes))); }
+      catch (e) { return Promise.resolve(null); }
+    }
+    if (kind !== 'A' || typeof DecompressionStream === 'undefined') return Promise.resolve(null);
+    try {
+      return new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip')))
+        .text().then(cleanSession).catch(function () { return null; });
+    } catch (e) { return Promise.resolve(null); }
+  }
+
+  function shareSession(ss) {
+    packSession(ss).then(function (tok) {
+      var url = location.origin + location.pathname + '#s=' + tok;
+      if (url.length > 12000) {
+        alert('This session is too big to send as a link. Share it a stage at a time, or delete some runs.');
+        return;
+      }
+      if (navigator.share) {
+        navigator.share({ title: ss.name, text: 'Stage maths \u2014 ' + ss.name, url: url })
+          .catch(function () {});
+        return;
+      }
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(url)
+          .then(function () { alert('Link copied. Send it to them however you like.'); },
+                function () { prompt('Copy this link:', url); });
+        return;
+      }
+      prompt('Copy this link:', url);
+    });
+  }
+
+  function tryImport() {
+    var h = location.hash || '';
+    if (h.indexOf('#s=') !== 0) return;
+    var tok = h.slice(3);
+    // Clear it straight away so a refresh doesn't re-prompt.
+    try { history.replaceState(null, '', location.pathname + location.search); }
+    catch (e) { location.hash = ''; }
+    unpackSession(tok).then(function (ss) {
+      if (!ss) { alert('That share link could not be read.'); return; }
+      var dup = sessions.some(function (x) { return x.id === ss.id; });
+      setTab('log');
+      if (dup) { renderLog(); return; }
+      var runs = runCount(ss.stages);
+      if (!confirm('Import "' + ss.name + '"?\n\n' + ss.stages.length +
+          (ss.stages.length === 1 ? ' stage, ' : ' stages, ') + runs +
+          (runs === 1 ? ' run.' : ' runs.'))) { renderLog(); return; }
+      sessions.push(ss);
+      if (!persistSessions()) { sessions.pop(); alert('Could not save it - this browser is refusing to store data.'); }
+      renderLog();
+    });
+  }
   function runCount(stages) {
     var n = 0;
     stages.forEach(function (st) { n += st.entries.length; });
@@ -1072,11 +1187,16 @@
       head.className = 'top';
       head.innerHTML = '<div class="ttl"><b></b><span>' + stgs + (stgs === 1 ? ' stage \u00b7 ' : ' stages \u00b7 ') +
         runs + (runs === 1 ? ' run \u00b7 ' : ' runs \u00b7 ') + fmtDate(d) +
-        '</span></div><button class="x" type="button" aria-label="Delete session">&times;</button>';
+        '</span></div><button class="sh-b ghost" type="button">Share</button>' +
+        '<button class="x" type="button" aria-label="Delete session">&times;</button>';
       head.querySelector('b').textContent = ss.name;
       head.addEventListener('click', function () {
         openSess = openSess === ss.id ? null : ss.id;
         renderLog();
+      });
+      head.querySelector('.sh-b').addEventListener('click', function (ev) {
+        ev.stopPropagation();
+        shareSession(ss);
       });
       head.querySelector('.x').addEventListener('click', function (ev) {
         ev.stopPropagation();
@@ -1408,6 +1528,10 @@
   paintPad();
   renderTimerBar();
   update();
+  tryImport();
+  // A share link tapped while the app is already open only changes the hash,
+  // which is a same-document navigation - no reload, so boot never runs again.
+  window.addEventListener('hashchange', tryImport);
   prev.ready = true;
 })();
 </script>

@@ -32,6 +32,14 @@
     --ink: #F8F3E8; --soft: #C0B6A0; --accent: #F2CB83; --accent-bg: #4A3D26;
     --pen: #F59E8E; --pen-bg: #523028; --pen-line: #8C5548;
   }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) .viz {
+      --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #008300;
+    }
+  }
+  :root[data-theme="dark"] .viz {
+    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #008300;
+  }
 
   * { box-sizing: border-box; }
   html { -webkit-text-size-adjust: 100%; }
@@ -75,6 +83,21 @@
   .sess .ttl { flex: 1; min-width: 0; }
   .sess .ttl b { font-size: 15.5px; font-weight: 600; display: block; }
   .sess .ttl span { font-size: 12px; color: var(--soft); }
+  .viz { position: relative;
+    --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100; --s5: #e87ba4; --s6: #008300; }
+  .viz svg { display: block; width: 100%; height: auto; overflow: visible; touch-action: pan-y; }
+  .legend { display: flex; flex-wrap: wrap; gap: 5px 14px; margin-top: 10px; }
+  .legend span { font-size: 12.5px; color: var(--soft); display: inline-flex; align-items: center; gap: 6px; }
+  .legend i { width: 10px; height: 10px; border-radius: 2px; flex: none; }
+  .legend b { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
+  .tip { position: absolute; pointer-events: none; opacity: 0; transition: opacity 120ms ease;
+    background: var(--raised); border: 1px solid var(--line); border-radius: var(--r-sm);
+    padding: 7px 9px; font-size: 12px; line-height: 1.5; box-shadow: 0 4px 14px rgba(0,0,0,.18);
+    white-space: nowrap; z-index: 2; font-variant-numeric: tabular-nums; }
+  .tip.on { opacity: 1; }
+  .tip u { display: block; text-decoration: none; color: var(--soft); margin-bottom: 2px; }
+  .tip i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 5px; }
+
   .sess .sh-b { flex: none; padding: 6px 12px; font-size: 12.5px; }
   .sess .x { flex: none; width: 32px; height: 32px; border-radius: 50%; font: inherit; font-size: 17px;
     line-height: 1; cursor: pointer; background: transparent; color: var(--soft); border: none; }
@@ -419,9 +442,31 @@
       <p class="hint" id="h2hNote"></p>
     </div>
 
+    <div class="card" id="trendCard" hidden>
+      <p class="lead">Trend</p>
+      <div class="viz">
+        <svg id="trend" viewBox="0 0 340 190" preserveAspectRatio="xMidYMid meet" role="img"></svg>
+        <div class="tip" id="trendTip"></div>
+        <div class="legend" id="trendLegend"></div>
+      </div>
+      <p class="hint" id="trendNote"></p>
+    </div>
+
     <div class="card">
       <p class="lead">Past sessions</p>
       <div id="sessList"></div>
+    </div>
+
+    <div class="card">
+      <p class="lead">Backup</p>
+      <p class="hint">Sessions live in this browser only. Clearing site data loses them, so keep a file
+        somewhere safe. Importing skips anything already here.</p>
+      <div class="actions">
+        <button type="button" id="sessExport" class="ghost">Export file</button>
+        <button type="button" id="sessImport" class="ghost">Import file</button>
+      </div>
+      <input type="file" id="sessFile" accept="application/json,.json" hidden>
+      <p class="hint" id="backupNote"></p>
     </div>
   </div>
 </div>
@@ -431,7 +476,7 @@
 <script>
 (function () {
   var el = function (id) { return document.getElementById(id); };
-  var BUILD = 'v17';  // bump with CACHE in sw.js
+  var BUILD = 'v18';  // bump with CACHE in sw.js
   el('build').textContent = 'build ' + BUILD;
   var KEY = 'stage-maths:match:v1';
 
@@ -963,6 +1008,65 @@
     });
   }
 
+  function mergeSessions(list) {
+    var added = 0, skipped = 0;
+    list.forEach(function (raw) {
+      var ss = cleanSession(JSON.stringify(raw));
+      if (!ss) { skipped++; return; }
+      if (sessions.some(function (x) { return x.id === ss.id; })) { skipped++; return; }
+      sessions.push(ss);
+      added++;
+    });
+    if (added && !persistSessions()) {
+      sessions.splice(sessions.length - added, added);
+      return { added: 0, skipped: skipped, failed: true };
+    }
+    return { added: added, skipped: skipped, failed: false };
+  }
+
+  el('sessExport').addEventListener('click', function () {
+    if (!sessions.length) { alert('No sessions to export yet.'); return; }
+    var blob = new Blob([JSON.stringify({
+      app: 'stage-maths', v: 1, exported: new Date().toISOString(), sessions: sessions
+    }, null, 2)], { type: 'application/json' });
+    var d = new Date();
+    var stamp = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' +
+                String(d.getDate()).padStart(2, '0');
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = 'stage-maths-sessions-' + stamp + '.json';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(function () { URL.revokeObjectURL(url); }, 2000);
+    el('backupNote').textContent = 'Exported ' + sessions.length +
+      (sessions.length === 1 ? ' session.' : ' sessions.');
+  });
+
+  el('sessImport').addEventListener('click', function () { el('sessFile').click(); });
+
+  el('sessFile').addEventListener('change', function () {
+    var f = this.files && this.files[0];
+    this.value = '';
+    if (!f) return;
+    var fr = new FileReader();
+    fr.onerror = function () { el('backupNote').textContent = 'Could not read that file.'; };
+    fr.onload = function () {
+      var o;
+      try { o = JSON.parse(String(fr.result)); } catch (e) { o = null; }
+      var list = Array.isArray(o) ? o : (o && Array.isArray(o.sessions) ? o.sessions : null);
+      if (!list) { el('backupNote').textContent = 'That does not look like a Stage maths export.'; return; }
+      var r = mergeSessions(list.slice(0, 500));
+      el('backupNote').textContent = r.failed
+        ? 'Could not save - this browser is refusing to store data.'
+        : 'Imported ' + r.added + (r.added === 1 ? ' session' : ' sessions') +
+          (r.skipped ? ', skipped ' + r.skipped + ' already here or unreadable' : '') + '.';
+      renderLog();
+    };
+    fr.readAsText(f);
+  });
+
   function tryImport() {
     var h = location.hash || '';
     if (h.indexOf('#s=') !== 0) return;
@@ -1140,6 +1244,166 @@
     return wrap;
   }
 
+  function esc(t) {
+    return String(t).replace(/[&<>"]/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
+    });
+  }
+  function shortDate(iso) {
+    var d = new Date(iso);
+    return isFinite(d) ? d.getDate() + ' ' + MON[d.getMonth()] : '';
+  }
+
+  // Per session, each shooter's average share of the stage winner - the same
+  // measure as head to head, kept session by session so it can be plotted.
+  function trendData() {
+    var people = {}, labels = [];
+    sessions.forEach(function (ss) {
+      var per = {};
+      (ss.stages || []).forEach(function (st) {
+        var groups = byShooter(st.entries);
+        if (groups.length < 2) return;
+        var top = 0;
+        groups.forEach(function (g) { if (g.hf > top) top = g.hf; });
+        if (top <= 0) return;
+        groups.forEach(function (g) {
+          var k = nameKey(g.name);
+          if (!per[k]) per[k] = { sum: 0, n: 0, name: g.name };
+          per[k].sum += (g.hf / top) * 100;
+          per[k].n++;
+        });
+      });
+      var keys = Object.keys(per);
+      if (!keys.length) return;
+      var i = labels.length;
+      labels.push({ name: ss.name, date: ss.date });
+      keys.forEach(function (k) {
+        if (!people[k]) people[k] = { name: per[k].name, pts: [] };
+        people[k].pts.push({ i: i, v: per[k].sum / per[k].n });
+      });
+    });
+    return { labels: labels, people: people };
+  }
+
+  var SLOTS = ['var(--s1)', 'var(--s2)', 'var(--s3)', 'var(--s4)', 'var(--s5)', 'var(--s6)'];
+  var trendShown = [], trendGeom = null;
+
+  function renderTrend() {
+    var card = el('trendCard'), svg = el('trend');
+    var d = trendData();
+    var keys = Object.keys(d.people);
+    if (d.labels.length < 2 || keys.length < 1) { card.hidden = true; return; }
+    card.hidden = false;
+
+    // Most-attended first, so the fullest lines take the leading slots. Hues are
+    // assigned in fixed order and never cycled; past six, shooters are left off.
+    keys.sort(function (a, b) {
+      var pa = d.people[a].pts, pb = d.people[b].pts;
+      if (pb.length !== pa.length) return pb.length - pa.length;
+      return pb[pb.length - 1].v - pa[pa.length - 1].v;
+    });
+    var omitted = Math.max(0, keys.length - SLOTS.length);
+    var shown = keys.slice(0, SLOTS.length);
+    trendShown = shown.map(function (k, i) {
+      return { key: k, name: d.people[k].name, pts: d.people[k].pts, col: SLOTS[i] };
+    });
+
+    var lo = 100;
+    trendShown.forEach(function (sr) { sr.pts.forEach(function (pt) { if (pt.v < lo) lo = pt.v; }); });
+    lo = Math.max(0, Math.min(90, Math.floor((lo - 4) / 10) * 10));
+    if (lo >= 100) lo = 90;
+
+    var W = 340, H = 190, padL = 34, padR = 12, padT = 12, padB = 28;
+    var pw = W - padL - padR, ph = H - padT - padB, n = d.labels.length;
+    var X = function (i) { return n === 1 ? padL + pw / 2 : padL + (i * pw) / (n - 1); };
+    var Y = function (v) { return padT + ph * (100 - v) / (100 - lo); };
+    trendGeom = { X: X, Y: Y, n: n, padL: padL, pw: pw, padT: padT, ph: ph, W: W, H: H, labels: d.labels };
+
+    var g = '';
+    // Recessive solid hairlines, never dashed.
+    [lo, Math.round((lo + 100) / 2), 100].forEach(function (v) {
+      var y = Y(v);
+      g += '<line x1="' + padL + '" y1="' + y.toFixed(1) + '" x2="' + (padL + pw) +
+           '" y2="' + y.toFixed(1) + '" stroke="var(--line)" stroke-width="1"/>' +
+           '<text x="' + (padL - 6) + '" y="' + (y + 3.5).toFixed(1) +
+           '" text-anchor="end" font-size="10" fill="var(--soft)">' + v + '%</text>';
+    });
+
+    // At most four x labels, so they cannot collide at phone width.
+    var step = Math.max(1, Math.ceil(n / 4));
+    d.labels.forEach(function (L, i) {
+      if (i % step !== 0 && i !== n - 1) return;
+      g += '<text x="' + X(i).toFixed(1) + '" y="' + (H - 9) + '" text-anchor="middle" font-size="10" fill="var(--soft)">' +
+           esc(shortDate(L.date)) + '</text>';
+    });
+
+    g += '<g id="trendCross" opacity="0"><line y1="' + padT + '" y2="' + (padT + ph) +
+         '" stroke="var(--soft)" stroke-width="1"/></g>';
+
+    trendShown.forEach(function (sr) {
+      var dd = sr.pts.map(function (pt, j) {
+        return (j ? 'L' : 'M') + X(pt.i).toFixed(1) + ' ' + Y(pt.v).toFixed(1);
+      }).join(' ');
+      if (sr.pts.length > 1) {
+        g += '<path d="' + dd + '" fill="none" stroke="' + sr.col +
+             '" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>';
+      }
+      sr.pts.forEach(function (pt) {
+        // 2px surface ring so overlapping markers stay separable.
+        g += '<circle cx="' + X(pt.i).toFixed(1) + '" cy="' + Y(pt.v).toFixed(1) +
+             '" r="4" fill="' + sr.col + '" stroke="var(--surface)" stroke-width="2"/>';
+      });
+    });
+
+    svg.innerHTML = '<title>Share of the stage winner, session by session</title>' + g;
+
+    el('trendLegend').innerHTML = trendShown.map(function (sr) {
+      var last = sr.pts[sr.pts.length - 1];
+      return '<span><i style="background:' + sr.col + '"></i>' + esc(sr.name) +
+             ' <b>' + last.v.toFixed(0) + '%</b></span>';
+    }).join('');
+
+    el('trendNote').textContent = 'Each point is that session\u2019s average share of the stage winner. ' +
+      'Higher is closer to winning; 100% means they won every stage that day.' +
+      (omitted ? ' ' + omitted + ' more ' + (omitted === 1 ? 'shooter is' : 'shooters are') + ' not shown.' : '');
+  }
+
+  function trendHover(ev) {
+    if (!trendGeom || !trendShown.length) return;
+    var svg = el('trend'), tip = el('trendTip');
+    var r = svg.getBoundingClientRect();
+    var x = ((ev.clientX - r.left) / r.width) * trendGeom.W;
+    var i = trendGeom.n === 1 ? 0
+      : Math.round(((x - trendGeom.padL) / trendGeom.pw) * (trendGeom.n - 1));
+    i = Math.max(0, Math.min(trendGeom.n - 1, i));
+    var cross = svg.querySelector('#trendCross');
+    if (cross) {
+      cross.setAttribute('opacity', '1');
+      var ln = cross.querySelector('line');
+      ln.setAttribute('x1', trendGeom.X(i)); ln.setAttribute('x2', trendGeom.X(i));
+    }
+    var rows = trendShown.map(function (sr) {
+      var pt = null;
+      sr.pts.forEach(function (q) { if (q.i === i) pt = q; });
+      return pt ? '<i style="background:' + sr.col + '"></i>' + esc(sr.name) + ' ' + pt.v.toFixed(0) + '%' : null;
+    }).filter(Boolean);
+    if (!rows.length) return;
+    tip.innerHTML = '<u>' + esc(trendGeom.labels[i].name) + '</u>' + rows.join('<br>');
+    tip.classList.add('on');
+    var px = (trendGeom.X(i) / trendGeom.W) * r.width;
+    tip.style.left = Math.max(0, Math.min(r.width - tip.offsetWidth, px - tip.offsetWidth / 2)) + 'px';
+    tip.style.top = '0px';
+  }
+  function trendLeave() {
+    el('trendTip').classList.remove('on');
+    var c = el('trend').querySelector('#trendCross');
+    if (c) c.setAttribute('opacity', '0');
+  }
+  el('trend').addEventListener('pointermove', trendHover);
+  el('trend').addEventListener('pointerdown', trendHover);
+  el('trend').addEventListener('pointerleave', trendLeave);
+  el('trend').addEventListener('pointercancel', trendLeave);
+
   function renderLog() {
     el('sessName').placeholder = today();
     var n = runCount(state.stages);
@@ -1170,6 +1434,8 @@
       (h.stages === 1 ? ' stage' : ' stages') +
       '. Hit factor does not compare between different stages, so each shooter is scored against whoever won that stage. ' +
       'Stages only one person shot are left out, and repeat runs count as the shooter\u2019s best.';
+
+    renderTrend();
 
     var list = el('sessList');
     list.innerHTML = '';

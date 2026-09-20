@@ -98,6 +98,24 @@ Shooters are matched across sessions by name, ignoring case and extra spaces
 — so "dave" and "Dave" are one person, but "Dave S" is another. A proper
 roster with stable IDs is still open work.
 
+### Trend
+
+The same percentage, session by session, one line per shooter. Shows whether
+the gap is opening or closing. Tap or drag across it for a session's numbers.
+
+Six shooters at most, taken in order of sessions attended. Past that, people
+are left off and the note says how many — hues are assigned in a fixed order
+and never recycled, because two shooters sharing a colour is worse than one
+being absent.
+
+### Backup
+
+Sessions live in this browser and nowhere else, so clearing site data loses
+them and a new phone starts empty. **Export file** writes the lot to a dated
+`.json`; **Import file** merges one back, skipping anything already present by
+ID. The same ID rule as share links, so a backup and a shared link can't
+fight each other. Imported files are validated exactly like share links.
+
 ## Timer tab
 
 Connects to a shot timer over Web Bluetooth — Chrome on Android only, since

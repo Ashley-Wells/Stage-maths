@@ -123,6 +123,8 @@
   .rn .l1 { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .rn .l2 { display: block; font-size: 11.5px; color: var(--soft); }
   .rn .l2:empty { display: none; }
+  .fa { font-size: 10px; font-weight: 700; padding: 1px 5px; border-radius: 4px;
+    background: var(--accent-bg); color: var(--accent); margin-left: 6px; white-space: nowrap; }
   .rn .hf { font-weight: 700; }
   .rn .pc { width: 58px; text-align: right; color: var(--soft); }
 
@@ -516,7 +518,7 @@
 <script>
 (function () {
   var el = function (id) { return document.getElementById(id); };
-  var BUILD = 'v24';  // bump with CACHE in sw.js
+  var BUILD = 'v25';  // bump with CACHE in sw.js
   el('build').textContent = 'build ' + BUILD;
   // v1 is still read but never written again, so a bad migration cannot destroy
   // a match that already exists. Delete nothing; just stop writing to it.
@@ -630,6 +632,23 @@
   function nameOf(n) { return (n || '').trim().replace(/\s+/g, ' ') || 'Unnamed'; }
 
   // Group a stage's runs by shooter: best run, average hit factor, run count.
+  // The entries a shooter shot first on this stage, in the order they were
+  // recorded. Only worth marking when they went again - one run is trivially
+  // their first. Keys are prefixed so a shooter called "constructor" cannot
+  // collide with something inherited from Object.prototype.
+  function firstAttempts(entries) {
+    var seen = {}, count = {}, first = [];
+    (entries || []).forEach(function (e) {
+      var k = '#' + runKey(e);
+      count[k] = (count[k] || 0) + 1;
+      if (!seen[k]) { seen[k] = e; }
+    });
+    Object.keys(seen).forEach(function (k) {
+      if (count[k] > 1) first.push(seen[k]);
+    });
+    return first;
+  }
+
   function byShooter(entries) {
     var m = {}, order = [];
     (entries || []).forEach(function (e) {
@@ -909,6 +928,7 @@
 
     var sorted = entries.slice().sort(function (a, b) { return b.hf - a.hf; });
     var top = sorted[0].hf;
+    var firsts = firstAttempts(entries);
     sorted.forEach(function (x, i) {
       var pct = top > 0 ? (x.hf / top) * 100 : 0;
       var row = document.createElement('div');
@@ -918,6 +938,12 @@
         '<div class="sc"><div class="sh">' + x.hf.toFixed(2) + '</div><div class="pc">' + pct.toFixed(1) + '%</div></div>' +
         '<button class="x" type="button" aria-label="Remove">&times;</button>';
       row.querySelector('.nm').textContent = runName(x);
+      if (firsts.indexOf(x) >= 0) {
+        var tag = document.createElement('span');
+        tag.className = 'fa';
+        tag.textContent = '1st';
+        row.querySelector('.nm').appendChild(tag);
+      }
       row.querySelector('.x').addEventListener('click', function (ev) {
         ev.stopPropagation();
         stage().entries = stage().entries.filter(function (e) { return e.id !== x.id; });
@@ -1145,10 +1171,18 @@
       if (extra.hd) run.hd = extra.hd;
       if (extra.f1) run.f1 = extra.f1;
       stage().entries.push(run);
-      // Keep the shooter for their next run; reset the score to a clean sheet.
+      // Keep the shooter; clear the run itself. Leaving the time behind meant
+      // the target times and the big hit factor were still being worked out
+      // from a run that had already been saved. Time and hit factor must both
+      // go: clearing the time alone would make the solver reconstruct one from
+      // the leftover hit factor and the clean points.
       hits = [];
       lastPH = 'points';
+      el('ctime').value = '';
+      el('chfIn').value = '';
+      held = false;
       syncPoints();
+      renderTimerBar();
     }
     persist(); update();
   });
@@ -1566,6 +1600,7 @@
       wrap.appendChild(h);
       var sorted = st.entries.slice().sort(function (a, b) { return b.hf - a.hf; });
       var top = sorted[0].hf;
+      var firsts = firstAttempts(st.entries);
       sorted.forEach(function (e) {
         var bits = [e.p + ' pts'];
         var bd = breakdown(e, st.rounds);
@@ -1576,7 +1611,13 @@
         r.innerHTML = '<span class="who"><span class="l1"></span><span class="l2"></span></span>' +
           '<span class="hf">' + e.hf.toFixed(2) + '</span>' +
           '<span class="pc">' + (top > 0 ? (e.hf / top * 100).toFixed(1) : '0.0') + '%</span>';
-        r.querySelector('.l1').textContent = e.name + '  ' + e.t.toFixed(2) + 's';
+        r.querySelector('.l1').textContent = runName(e) + '  ' + e.t.toFixed(2) + 's';
+        if (firsts.indexOf(e) >= 0) {
+          var tag = document.createElement('span');
+          tag.className = 'fa';
+          tag.textContent = '1st';
+          r.querySelector('.l1').appendChild(tag);
+        }
         r.querySelector('.l2').textContent = bits.join('  \u00b7  ');
         wrap.appendChild(r);
       });

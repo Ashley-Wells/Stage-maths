@@ -36,6 +36,15 @@ recently. **+ Shooter** adds someone new. Saving keeps the shooter selected
 and resets the score to clean, so a practice squad doing run after run can
 just keep tapping Save.
 
+Saving clears the run — time, hit factor and points — and keeps the shooter.
+The time has to go with the rest: left behind, the target times and the big
+hit factor carry on being worked out from a run already saved.
+
+Where a shooter went more than once on a stage, their **first** run is tagged
+`1st`, in the standings and in the saved session. It marks the cold run, so
+the cost of not being warmed up is visible rather than buried in an average.
+A shooter with a single run is not tagged — there is nothing to compare it to.
+
 Standings read two ways. **All runs** lists every run, which is what you want
 when the same people are shooting repeatedly and you're watching for
 improvement. **Best each** collapses to one row per shooter — their best hit

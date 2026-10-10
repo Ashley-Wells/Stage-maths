@@ -212,6 +212,11 @@ called**:
 - The chip shows whether a timer is connected, and beside it the shot count
   and first shot time.
 
+A live time lands in the form you were **last on** — Stage or Drills — not
+whichever tab happens to be showing. So you can arm Auto on Drills, flip to
+the Timer tab to watch the string, and the time is waiting on Drills when you
+go back. "Use this time" on the Timer tab follows the same rule.
+
 ### AMG Lab Commander frame format
 
 Worked out from captures, not from a published spec — AMG don't document

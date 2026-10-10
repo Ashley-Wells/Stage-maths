@@ -630,7 +630,7 @@
 <script>
 (function () {
   var el = function (id) { return document.getElementById(id); };
-  var BUILD = 'v30';  // bump with CACHE in sw.js
+  var BUILD = 'v31';  // bump with CACHE in sw.js
   el('build').textContent = 'build ' + BUILD + ' \u00b7 tap to update';
 
   // An escape hatch. A stale service worker has sent us chasing bugs that were
@@ -2183,9 +2183,14 @@
     { time: 'ctime', back: 'shotBack', fwd: 'shotFwd', auto: 'shotAuto', chip: 'tmrChip', info: 'tmrInfo', tab: 'stage' },
     { time: 'dtime', back: 'dShotBack', fwd: 'dShotFwd', auto: 'dShotAuto', chip: 'dTmrChip', info: 'dTmrInfo', tab: 'drills' }
   ];
-  var curTab = 'stage';
+  // The form a live time lands in is the LAST form page visited, not the tab
+  // on screen. Keying this on the current tab sent the time to the hidden
+  // Stage form whenever the string ran while the Timer tab was showing -
+  // which is exactly where you are just after connecting - so the drill field
+  // stayed empty until Auto was toggled.
+  var formTab = 'stage';
   function activeBar() {
-    for (var i = 0; i < BARS.length; i++) if (BARS[i].tab === curTab) return BARS[i];
+    for (var i = 0; i < BARS.length; i++) if (BARS[i].tab === formTab) return BARS[i];
     return BARS[0];
   }
 
@@ -2674,7 +2679,7 @@
       el('tab' + cap).setAttribute('aria-pressed', String(t === name));
       el('view' + cap).hidden = t !== name;
     });
-    curTab = name;
+    if (name === 'stage' || name === 'drills') formTab = name;
     if (name === 'overall') renderOverall();
     if (name === 'log') renderLog();
     if (name === 'drills') renderDrills();
@@ -2961,11 +2966,13 @@
   el('bleUse').addEventListener('click', function () {
     var v = parseFloat(el('bleTime').value);
     if (!isFinite(v) || v <= 0) return;
-    el('ctime').value = v.toFixed(2);
-    lastPH = 'points';
+    var b = activeBar();          // the form you were last on, not always Stage
+    el(b.time).value = v.toFixed(2);
     held = true;
     renderTimerBar();
-    setTab('stage');
+    setTab(b.tab);
+    if (b.tab === 'drills') { renderDrillRun(); return; }
+    lastPH = 'points';
     update();
   });
 

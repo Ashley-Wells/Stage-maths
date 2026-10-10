@@ -627,7 +627,7 @@
 <script>
 (function () {
   var el = function (id) { return document.getElementById(id); };
-  var BUILD = 'v28';  // bump with CACHE in sw.js
+  var BUILD = 'v29';  // bump with CACHE in sw.js
   el('build').textContent = 'build ' + BUILD;
   // v1 is still read but never written again, so a bad migration cannot destroy
   // a match that already exists. Delete nothing; just stop writing to it.
@@ -2071,6 +2071,15 @@
   });
   el('dStrings').addEventListener('blur', function () {
     el('dStrings').value = stringsText(drill().strings);   // tidy up on the way out
+  });
+  // Tapping a short field lands the caret after what is already there, so
+  // typing "2" over a default of "6" gives "62". Select it instead: this box
+  // is always replaced wholesale, never appended to.
+  el('dStrings').addEventListener('focus', function () {
+    // Synchronous on purpose. Deferring this with setTimeout raced the first
+    // keystroke: type quickly after tapping and the deferred select wiped the
+    // character you had just entered.
+    try { this.select(); } catch (e) {}
   });
   el('dTimed').addEventListener('click', function () {
     drill().scored = false; persistDrills(); renderDrillSetup(); renderDrillRun();

@@ -268,6 +268,50 @@ and the origin as the beep.
 Remote start is still unknown. The hex box writes arbitrary bytes to the RX
 characteristic if you want to hunt for it.
 
+## Drills tab
+
+Solo practice, kept entirely apart from the weekly head to head. Drills live
+under their own storage key and nothing that feeds head to head, the trend,
+the draw tables or match points reads it. Nothing you do here can move those
+numbers, and nothing from there appears here.
+
+A drill is a **fixed** exercise — same targets, same distance, same course of
+fire, every time. That is what makes solo tracking work: your raw times across
+attempts compare directly, where match stages never could because they change
+every week.
+
+Set one up with a name, a type, a shot structure and the first target:
+
+- **Timed or scored.** Timed hides points entirely and ranks on the clock —
+  right for steel. Scored keeps points, hit factor and the tap pad.
+- **Shots**, written as `2+2`: two shots, a reload, two more. The round count
+  and the reload positions both fall out of it, and `6+6+6` gives two reloads.
+- **First target** distance and the partial/no-shoot flag, as on a stage.
+
+### Draw and reload
+
+The draw is the first shot. A reload is the split across it — on a `2+2` drill
+that is shot 3's split, which the timer already reports.
+
+Steel complicates this: make up a miss and you have fired five shots, not
+four, so shot 3 is a make-up rather than the shot after the reload. So when
+the shot count matches the drill, the reload is taken straight from the
+structure. When it doesn't, the **largest splits are taken as the reloads** —
+a make-up runs under a second, a reload around two. Either way the choice is
+shown as tappable chips before you save, so a wrong guess costs one tap rather
+than quietly poisoning your reload average.
+
+Best and average for the drill's own metric, the draw and the reload sit at
+the top; attempts are listed newest first with the personal best tagged.
+
+### What leaves the device
+
+Drills are in the backup file, so a cleared browser doesn't lose them. They
+are **never** in a share link — a link carries one session and nothing else,
+and there is a test that decodes a link and asserts no drill data is in it.
+The backup file is a different thing: it holds your drills, so it is for you,
+not for handing round.
+
 ## Shooters
 
 Every shooter is a roster record with a stable ID, and every run points at one.

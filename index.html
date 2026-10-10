@@ -77,6 +77,8 @@
   }
   .seg button[aria-pressed="true"] { background: var(--raised); color: var(--ink); box-shadow: 0 1px 2px rgba(0,0,0,.14); }
   .seg.top { background: var(--surface); border: 1px solid var(--line); }
+  /* Five tabs at phone width: a step down stops the longest crowding. */
+  .seg.top button { font-size: 13.5px; padding: 9px 2px; }
   .sess { border-top: 1px solid var(--line); padding: 11px 0; }
   .sess:first-child { border-top: none; }
   .sess .top { display: flex; align-items: center; gap: 10px; cursor: pointer; }
@@ -123,6 +125,13 @@
   .rn .l1 { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .rn .l2 { display: block; font-size: 11.5px; color: var(--soft); }
   .rn .l2:empty { display: none; }
+  .sum { display: flex; flex-wrap: wrap; gap: 10px; }
+  .sum div { flex: 1 1 30%; min-width: 92px; background: var(--raised); border: 1px solid var(--line);
+    border-radius: var(--r-sm); padding: 9px 10px; }
+  .sum b { display: block; font-size: 19px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .sum span { font-size: 11px; color: var(--soft); }
+  .sum .k { color: var(--accent); }
+  #dReloadChips button { font-size: 12.5px; padding: 6px 11px; min-height: 34px; }
   .fa { font-size: 10px; font-weight: 700; padding: 1px 5px; border-radius: 4px;
     background: var(--accent-bg); color: var(--accent); margin-left: 6px; white-space: nowrap; }
   .rn .hf { font-weight: 700; }
@@ -288,6 +297,7 @@
     <button type="button" id="tabOverall" aria-pressed="false">Overall</button>
     <button type="button" id="tabTimer" aria-pressed="false">Timer</button>
     <button type="button" id="tabLog" aria-pressed="false">Log</button>
+    <button type="button" id="tabDrills" aria-pressed="false">Drills</button>
   </div>
 
   <div id="viewStage">
@@ -501,14 +511,98 @@
 
     <div class="card">
       <p class="lead">Backup</p>
-      <p class="hint">Sessions live in this browser only. Clearing site data loses them, so keep a file
-        somewhere safe. Importing skips anything already here.</p>
+      <p class="hint">Sessions and drills live in this browser only. Clearing site data loses them, so
+        keep a file somewhere safe. Importing skips anything already here. The file holds your drills
+        too, so it is a backup rather than something to hand around — a share link only ever carries
+        the one session.</p>
       <div class="actions">
         <button type="button" id="sessExport" class="ghost">Export file</button>
         <button type="button" id="sessImport" class="ghost">Import file</button>
       </div>
       <input type="file" id="sessFile" accept="application/json,.json" hidden>
       <p class="hint" id="backupNote"></p>
+    </div>
+  </div>
+
+  <div id="viewDrills" hidden>
+    <div class="chips" id="drillChips"></div>
+
+    <div class="card">
+      <div class="field">
+        <label for="drillName">Drill</label>
+        <input type="text" id="drillName" placeholder="Name" autocomplete="off">
+      </div>
+      <div class="seg" role="group" aria-label="Drill type">
+        <button type="button" id="dTimed" aria-pressed="true">Timed</button>
+        <button type="button" id="dScored" aria-pressed="false">Scored</button>
+      </div>
+      <div class="field">
+        <label for="dStrings">Shots</label>
+        <input type="text" id="dStrings" placeholder="2+2" autocomplete="off" spellcheck="false">
+      </div>
+      <p class="hint" id="dShotsHint"></p>
+      <p class="hint" style="margin-bottom:6px">First target</p>
+      <div class="chips who" id="dDistChips"></div>
+      <div class="chips who" id="dHardChips"></div>
+      <div class="headrow">
+        <p class="hint">Yours alone — drills never reach the head to head</p>
+        <button type="button" class="ghost" id="dDelete">Delete</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <p class="lead" id="dRunLead">This attempt</p>
+      <div class="field">
+        <label for="dtime">Time</label>
+        <input type="number" id="dtime" placeholder="—" min="0" max="300" step="0.01" inputmode="decimal">
+      </div>
+      <div class="tmrbar">
+        <button type="button" class="ghost step" id="dShotBack" aria-label="Previous shot">&lsaquo;</button>
+        <button type="button" class="ghost" id="dShotAuto" aria-pressed="false">Auto</button>
+        <button type="button" class="ghost step" id="dShotFwd" aria-label="Next shot">&rsaquo;</button>
+        <span class="pill" id="dTmrChip">No timer</span>
+        <span class="tmrinfo" id="dTmrInfo"></span>
+      </div>
+
+      <div id="dReloadBox" hidden>
+        <p class="hint" id="dReloadHint"></p>
+        <div class="chips who" id="dReloadChips"></div>
+      </div>
+
+      <div id="dScoredBox" hidden>
+        <div class="field">
+          <label for="dpts">Points</label>
+          <input type="number" id="dpts" placeholder="clean" min="-99" max="400" step="1" inputmode="numeric">
+        </div>
+        <p class="hint">Starts clean — tap only what you dropped</p>
+        <div class="pad" id="dpad">
+          <button type="button" data-k="C"><span class="k">C</span><span class="c">0</span></button>
+          <button type="button" data-k="D"><span class="k">D</span><span class="c">0</span></button>
+          <button type="button" data-k="M" class="pen"><span class="k">M</span><span class="c">0</span></button>
+          <button type="button" data-k="N" class="pen"><span class="k">NS</span><span class="c">0</span></button>
+        </div>
+        <div class="padbar">
+          <span class="tally" id="dTally"></span>
+          <button type="button" class="ghost" id="dUndo">Undo</button>
+          <button type="button" class="ghost" id="dClear">Clear</button>
+        </div>
+      </div>
+
+      <p class="hint" id="dRunNote"></p>
+      <button type="button" id="dSave" class="primary">Save attempt</button>
+    </div>
+
+    <div class="card" id="dStatsCard" hidden>
+      <p class="lead">Summary</p>
+      <div id="dStats"></div>
+    </div>
+
+    <div class="card" id="dListCard" hidden>
+      <div class="headrow">
+        <p class="lead">Attempts</p>
+        <button type="button" class="ghost" id="dWipe">Clear</button>
+      </div>
+      <div id="dList"></div>
     </div>
   </div>
 </div>
@@ -518,7 +612,7 @@
 <script>
 (function () {
   var el = function (id) { return document.getElementById(id); };
-  var BUILD = 'v25';  // bump with CACHE in sw.js
+  var BUILD = 'v26';  // bump with CACHE in sw.js
   el('build').textContent = 'build ' + BUILD;
   // v1 is still read but never written again, so a bad migration cannot destroy
   // a match that already exists. Delete nothing; just stop writing to it.
@@ -545,6 +639,66 @@
   // One flag rather than separate partial and no-shoot settings: two groups per
   // distance keeps averages populated, where four would spread them too thin.
   function groupLabel(d, hard) { return distLabel(d) + (hard ? ' \u00b7 partial or no-shoot' : ''); }
+  function newDrill(n) {
+    return { id: uid(), name: 'Drill ' + n, scored: false, strings: [6], dist: null, hard: false, attempts: [] };
+  }
+  function drill() { return drills[dActive]; }
+  // "2+2" is two shots, a reload, two shots. The round count falls out of it,
+  // and so do the shot numbers that follow a reload.
+  function parseStrings(txt) {
+    var parts = String(txt == null ? '' : txt).split(/[^0-9]+/)
+      .filter(function (x) { return x !== ''; })
+      .map(function (x) { return Math.max(1, Math.min(60, parseInt(x, 10))); });
+    return parts.length ? parts.slice(0, 10) : [6];
+  }
+  function stringsText(arr) { return (arr || []).join('+'); }
+  function drillRounds(d) {
+    var n = 0;
+    ((d || {}).strings || []).forEach(function (x) { n += x; });
+    return n;
+  }
+  function reloadShots(d) {
+    var out = [], acc = 0, st = (d || {}).strings || [];
+    for (var i = 0; i < st.length - 1; i++) { acc += st[i]; out.push(acc + 1); }
+    return out;
+  }
+
+  // Which shots followed a reload. When the shot count matches the drill, the
+  // structure says so outright. When it does not - a made-up miss on steel
+  // means an extra shot - fall back to size: a make-up split runs under a
+  // second, a reload around two, so the largest splits are the reloads. Either
+  // way the choice is shown and can be re-tapped before saving.
+  function detectReloads(d) {
+    var need = reloadShots(d).length;
+    if (!need || shots.length < 2) return { matched: true, picks: [] };
+    if (shots.length === drillRounds(d)) return { matched: true, picks: reloadShots(d) };
+    var cand = [];
+    for (var i = 1; i < shots.length; i++) cand.push({ n: i + 1, v: shots[i].split });
+    cand.sort(function (a, b) { return b.v - a.v; });
+    return {
+      matched: false,
+      picks: cand.slice(0, need).map(function (c) { return c.n; })
+        .sort(function (a, b) { return a - b; })
+    };
+  }
+
+  function loadDrills() {
+    try {
+      var raw = localStorage.getItem(DRILL_KEY);
+      var o = raw ? JSON.parse(raw) : null;
+      drills = Array.isArray(o) ? o.filter(function (d) { return d && d.id; }) : [];
+    } catch (e) { drills = []; }
+    drills.forEach(function (d) {
+      if (!Array.isArray(d.strings) || !d.strings.length) d.strings = [6];
+      if (!Array.isArray(d.attempts)) d.attempts = [];
+    });
+    if (!drills.length) drills = [newDrill(1)];
+    if (!(dActive >= 0) || dActive >= drills.length) dActive = 0;
+  }
+  function persistDrills() {
+    try { localStorage.setItem(DRILL_KEY, JSON.stringify(drills)); return true; } catch (e) { return false; }
+  }
+
   function newStage(n) { return { id: uid(), name: 'Stage ' + n, rounds: 24, dist: null, hard: false, entries: [] }; }
   function stage() { return state.stages[state.active]; }
 
@@ -622,11 +776,13 @@
   function dropD() { return state.major ? 3 : 4; }
   function maxPts(st) { return (st || stage()).rounds * 5; }
   function num(input, fb) { var v = parseFloat(input.value); return isFinite(v) ? v : fb; }
-  function counts() {
+  function countOf(arr) {
     var c = { C: 0, D: 0, M: 0, N: 0 };
-    for (var i = 0; i < hits.length; i++) c[hits[i]]++;
+    for (var i = 0; i < (arr || []).length; i++) c[arr[i]]++;
     return c;
   }
+  function downOf(c) { return c.C * dropC() + c.D * dropD() + c.M * 15 + c.N * 10; }
+  function counts() { return countOf(hits); }
   // "dave", "Dave" and " Dave  S " group together; "Dave S" stays its own person.
   function nameKey(n) { return (n || 'Unnamed').trim().replace(/\s+/g, ' ').toLowerCase(); }
   function nameOf(n) { return (n || '').trim().replace(/\s+/g, ' ') || 'Unnamed'; }
@@ -705,8 +861,7 @@
     });
   }
   function syncPoints() {
-    var c = counts();
-    var down = c.C * dropC() + c.D * dropD() + c.M * 15 + c.N * 10;
+    var down = downOf(counts());
     el('cpts').value = hits.length ? String(maxPts() - down) : '';
     paintPad();
     update();
@@ -1077,8 +1232,7 @@
     cur = { hf: thf, t: t, p: p };
     el('save').disabled = !(thf > 0);
 
-    var c = counts();
-    var down = c.C * dropC() + c.D * dropD() + c.M * 15 + c.N * 10;
+    var down = downOf(counts());
     el('tally').textContent = solved === 'points'
       ? 'Points worked out from time and hit factor'
       : (down > 0 ? 'Down ' + down + ' · ' + (mp - down) + ' pts' : 'Clean · ' + mp + ' pts');
@@ -1243,6 +1397,11 @@
 
   // Saved practice sessions. Separate key from the live board, so nothing here
   // can corrupt a match in progress and no migration was needed to add it.
+  // Solo drill practice. Deliberately its own key, read by nothing that feeds
+  // the weekly head to head, the trend, the draw tables or match points.
+  var DRILL_KEY = 'stage-maths:drills:v1';
+  var drills = [], dActive = 0, dhits = [], dReloadPicks = null;
+
   var SESS_KEY = 'stage-maths:sessions:v1';
   var sessions = [];
   var openSess = null;
@@ -1384,6 +1543,60 @@
     return made;
   }
 
+  // Drills arriving from a file are untrusted like everything else: coerced,
+  // capped, and merged by id so re-importing the same backup is a no-op.
+  function cleanDrill(raw) {
+    if (!raw || typeof raw !== 'object') return null;
+    var str = function (v, max) { return typeof v === 'string' ? v.slice(0, max) : ''; };
+    var fin = function (v) { return typeof v === 'number' && isFinite(v) ? v : 0; };
+    var strings = Array.isArray(raw.strings)
+      ? raw.strings.slice(0, 10).map(function (x) { return Math.max(1, Math.min(60, Math.round(fin(x)))); })
+      : [];
+    var d = {
+      id: str(raw.id, 40) || uid(),
+      name: str(raw.name, 60) || 'Drill',
+      scored: !!raw.scored,
+      strings: strings.length ? strings : [6],
+      dist: DISTS.indexOf(Math.round(fin(raw.dist))) >= 0 ? Math.round(fin(raw.dist)) : null,
+      hard: !!raw.hard,
+      attempts: (Array.isArray(raw.attempts) ? raw.attempts : []).slice(0, 2000).map(function (a) {
+        if (!a || typeof a !== 'object') return null;
+        var t = fin(a.t);
+        if (!(t > 0)) return null;
+        var o = { id: str(a.id, 40) || uid(), at: str(a.at, 40) || new Date().toISOString(), t: t };
+        if (fin(a.p)) o.p = Math.round(fin(a.p));
+        if (fin(a.hf) > 0) o.hf = fin(a.hf);
+        if (a.hd && typeof a.hd === 'object') {
+          var cap = function (v) { return Math.max(0, Math.min(200, Math.round(fin(v)))); };
+          o.hd = { C: cap(a.hd.C), D: cap(a.hd.D), M: cap(a.hd.M), N: cap(a.hd.N) };
+        }
+        if (fin(a.f1) > 0) o.f1 = fin(a.f1);
+        if (Array.isArray(a.rl)) {
+          o.rl = a.rl.slice(0, 10).map(function (r) {
+            if (!r || typeof r !== 'object' || !(fin(r.v) > 0)) return null;
+            return { s: Math.max(1, Math.min(200, Math.round(fin(r.s)))), v: fin(r.v) };
+          }).filter(Boolean);
+          if (!o.rl.length) delete o.rl;
+        }
+        return o;
+      }).filter(Boolean)
+    };
+    return d;
+  }
+
+  function mergeDrills(list) {
+    var added = 0;
+    (Array.isArray(list) ? list : []).slice(0, 200).forEach(function (raw) {
+      var d = cleanDrill(raw);
+      if (!d || !d.attempts.length) return;   // a drill with no history is not worth importing
+      if (drills.some(function (x) { return x.id === d.id; })) return;
+      drills.push(d);
+      added++;
+    });
+    if (added) persistDrills();
+    return added;
+  }
+
   function mergeSessions(list) {
     var added = 0, skipped = 0;
     list.forEach(function (raw) {
@@ -1403,8 +1616,14 @@
 
   el('sessExport').addEventListener('click', function () {
     if (!sessions.length) { alert('No sessions to export yet.'); return; }
+    // The backup is yours and carries your drills. A share link is a single
+    // session and never does - see packSession, which is given one session.
+    // Only drills with attempts go: the app always keeps one blank drill on
+    // hand, and exporting that placeholder spawned a duplicate on import.
+    var keep = drills.filter(function (d) { return (d.attempts || []).length; });
     var blob = new Blob([JSON.stringify({
-      app: 'stage-maths', v: 1, exported: new Date().toISOString(), sessions: sessions
+      app: 'stage-maths', v: 1, exported: new Date().toISOString(),
+      sessions: sessions, drills: keep
     }, null, 2)], { type: 'application/json' });
     var d = new Date();
     var stamp = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' +
@@ -1417,8 +1636,11 @@
     a.click();
     document.body.removeChild(a);
     setTimeout(function () { URL.revokeObjectURL(url); }, 2000);
+    var na = 0;
+    keep.forEach(function (d) { na += (d.attempts || []).length; });
     el('backupNote').textContent = 'Exported ' + sessions.length +
-      (sessions.length === 1 ? ' session.' : ' sessions.');
+      (sessions.length === 1 ? ' session' : ' sessions') +
+      (na ? ' and ' + na + (na === 1 ? ' drill attempt' : ' drill attempts') : '') + '.';
   });
 
   el('sessImport').addEventListener('click', function () { el('sessFile').click(); });
@@ -1435,11 +1657,14 @@
       var list = Array.isArray(o) ? o : (o && Array.isArray(o.sessions) ? o.sessions : null);
       if (!list) { el('backupNote').textContent = 'That does not look like a Stage maths export.'; return; }
       var r = mergeSessions(list.slice(0, 500));
+      var nd = (o && Array.isArray(o.drills)) ? mergeDrills(o.drills) : 0;
       el('backupNote').textContent = r.failed
         ? 'Could not save - this browser is refusing to store data.'
         : 'Imported ' + r.added + (r.added === 1 ? ' session' : ' sessions') +
+          (nd ? ' and ' + nd + (nd === 1 ? ' drill' : ' drills') : '') +
           (r.skipped ? ', skipped ' + r.skipped + ' already here or unreadable' : '') + '.';
       renderLog();
+      renderDrills();
     };
     fr.readAsText(f);
   });
@@ -1541,29 +1766,373 @@
     return { rows: rows, stages: stagesUsed };
   }
 
-  var TABS = ['stage', 'overall', 'timer', 'log'];
+  // ---- Drills: solo practice, isolated from everything above ----
+
+  function dMaxPts() { return drillRounds(drill()) * 5; }
+
+  function dCur() {
+    var d = drill();
+    var t = num(el('dtime'), 0);
+    if (!(t > 0)) return { t: 0, p: 0, hf: 0 };
+    if (!d.scored) return { t: t, p: 0, hf: 0 };
+    var mp = dMaxPts();
+    var typed = el('dpts').value.trim() !== '';
+    var pts = typed ? num(el('dpts'), mp) : mp - downOf(countOf(dhits));
+    return { t: t, p: Math.round(pts), hf: pts / t };
+  }
+
+  function renderDrillChips() {
+    var c = el('drillChips');
+    c.innerHTML = '';
+    drills.forEach(function (d, i) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = d.name || ('Drill ' + (i + 1));
+      b.setAttribute('aria-pressed', String(i === dActive));
+      b.addEventListener('click', function () {
+        dActive = i; dhits = []; dReloadPicks = null;
+        el('dtime').value = ''; el('dpts').value = '';
+        persistDrills(); renderDrills();
+      });
+      c.appendChild(b);
+    });
+    var add = document.createElement('button');
+    add.type = 'button';
+    add.textContent = '+ Drill';
+    add.addEventListener('click', function () {
+      drills.push(newDrill(drills.length + 1));
+      dActive = drills.length - 1; dhits = []; dReloadPicks = null;
+      el('dtime').value = ''; el('dpts').value = '';
+      persistDrills(); renderDrills();
+    });
+    c.appendChild(add);
+  }
+
+  function renderDrillSetup() {
+    var d = drill();
+    el('drillName').value = d.name || '';
+    el('dStrings').value = stringsText(d.strings);
+    el('dTimed').setAttribute('aria-pressed', String(!d.scored));
+    el('dScored').setAttribute('aria-pressed', String(!!d.scored));
+    el('dDelete').hidden = drills.length < 2;
+    var rl = reloadShots(d);
+    el('dShotsHint').textContent = drillRounds(d) + ' shots' +
+      (rl.length ? ', ' + rl.length + (rl.length === 1 ? ' reload before shot ' : ' reloads before shots ') + rl.join(' and ')
+                 : ', no reload') +
+      (d.scored ? ' \u00b7 ' + dMaxPts() + ' points on offer' : '');
+
+    var dc = el('dDistChips');
+    dc.innerHTML = '';
+    var none = document.createElement('button');
+    none.type = 'button';
+    none.textContent = 'Not set';
+    none.setAttribute('aria-pressed', String(!d.dist));
+    none.addEventListener('click', function () { d.dist = null; persistDrills(); renderDrillSetup(); });
+    dc.appendChild(none);
+    DISTS.forEach(function (m) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = distLabel(m);
+      b.setAttribute('aria-pressed', String(d.dist === m));
+      b.addEventListener('click', function () { d.dist = m; persistDrills(); renderDrillSetup(); });
+      dc.appendChild(b);
+    });
+    var hc = el('dHardChips');
+    hc.innerHTML = '';
+    var t = document.createElement('button');
+    t.type = 'button';
+    t.textContent = 'Partial or no-shoot';
+    t.setAttribute('aria-pressed', String(!!d.hard));
+    t.addEventListener('click', function () { d.hard = !d.hard; persistDrills(); renderDrillSetup(); });
+    hc.appendChild(t);
+    hc.hidden = !d.dist;
+  }
+
+  function dPaintPad() {
+    var c = countOf(dhits);
+    Array.prototype.forEach.call(el('dpad').children, function (b) {
+      var k = b.getAttribute('data-k');
+      b.querySelector('.c').textContent = c[k];
+      b.classList.toggle('on', c[k] > 0);
+    });
+    var down = downOf(c);
+    el('dTally').textContent = down > 0
+      ? 'Down ' + down + ' \u00b7 ' + (dMaxPts() - down) + ' pts'
+      : 'Clean \u00b7 ' + dMaxPts() + ' pts';
+  }
+
+  // The reload picks: which shots followed a reload in the string on screen.
+  function dPicks() {
+    if (dReloadPicks) return dReloadPicks;
+    var det = detectReloads(drill());
+    dReloadPicks = det.picks.slice();
+    return dReloadPicks;
+  }
+
+  function renderDrillRun() {
+    var d = drill();
+    el('dScoredBox').hidden = !d.scored;
+    if (d.scored) {
+      if (el('dpts').value.trim() === '' && !dhits.length) el('dpts').value = '';
+      dPaintPad();
+    }
+
+    var need = reloadShots(d).length;
+    var box = el('dReloadBox');
+    box.hidden = !(need && shots.length > 1);
+    if (!box.hidden) {
+      var det = detectReloads(d);
+      var picks = dPicks();
+      el('dReloadHint').textContent = det.matched
+        ? 'Reload ' + (need === 1 ? 'split' : 'splits') + ' from the string \u2014 tap to change'
+        : shots.length + ' shots recorded, ' + drillRounds(d) + ' expected. Biggest ' +
+          (need === 1 ? 'split is taken as the reload' : 'splits are taken as the reloads') + ' \u2014 tap to change';
+      var rc = el('dReloadChips');
+      rc.innerHTML = '';
+      for (var i = 1; i < shots.length; i++) {
+        (function (n, v) {
+          var b = document.createElement('button');
+          b.type = 'button';
+          b.textContent = n + ' \u00b7 ' + v.toFixed(2);
+          b.setAttribute('aria-pressed', String(picks.indexOf(n) >= 0));
+          b.addEventListener('click', function () {
+            var at = picks.indexOf(n);
+            if (at >= 0) picks.splice(at, 1);
+            else {
+              if (picks.length >= need) picks.shift();
+              picks.push(n);
+              picks.sort(function (a, b2) { return a - b2; });
+            }
+            renderDrillRun();
+          });
+          rc.appendChild(b);
+        })(i + 1, shots[i].split);
+      }
+    }
+
+    var c = dCur();
+    var bits = [];
+    if (c.t > 0) {
+      bits.push(c.t.toFixed(2) + 's');
+      if (d.scored && c.hf > 0) bits.push(c.p + ' pts \u00b7 ' + c.hf.toFixed(2) + ' hit factor');
+      var ex = dAttemptExtras();
+      if (ex.f1) bits.push('draw ' + ex.f1.toFixed(2));
+      if (ex.rl && ex.rl.length) {
+        bits.push((ex.rl.length === 1 ? 'reload ' : 'reloads ') +
+          ex.rl.map(function (r) { return r.v.toFixed(2); }).join(', '));
+      }
+    }
+    el('dRunNote').textContent = bits.length ? bits.join('  \u00b7  ') : 'Needs a time.';
+    el('dSave').disabled = !(c.t > 0);
+  }
+
+  // Draw and reloads, taken only when the time being saved is genuinely one of
+  // the shots in the string on screen - the same guard the stage form uses.
+  function dAttemptExtras() {
+    var out = { f1: null, rl: [] };
+    if (!shots.length) return out;
+    var tv = el('dtime').value.trim(), ours = false;
+    for (var i = 0; i < shots.length; i++) if (shots[i].cum.toFixed(2) === tv) { ours = true; break; }
+    if (!ours) return out;
+    out.f1 = shots[0].cum;
+    dPicks().forEach(function (n) {
+      var sh = shots[n - 1];
+      if (sh) out.rl.push({ s: n, v: sh.split });
+    });
+    return out;
+  }
+
+  function statTile(label, value, key) {
+    return '<div><b' + (key ? ' class="k"' : '') + '>' + value + '</b><span>' + label + '</span></div>';
+  }
+
+  function renderDrillStats() {
+    var d = drill(), a = d.attempts || [];
+    el('dStatsCard').hidden = !a.length;
+    if (!a.length) return;
+    // A drill is a fixed exercise, so raw numbers compare directly across
+    // attempts. That is exactly what stages could not do.
+    var vals = a.map(function (x) { return d.scored ? x.hf : x.t; }).filter(function (v) { return v > 0; });
+    var better = d.scored
+      ? function (x, y) { return x > y; }      // higher hit factor
+      : function (x, y) { return x < y; };     // lower time
+    var best = vals.length ? vals.reduce(function (x, y) { return better(x, y) ? x : y; }) : 0;
+    var avg = vals.length ? vals.reduce(function (x, y) { return x + y; }, 0) / vals.length : 0;
+    var fmt = function (v) { return d.scored ? v.toFixed(2) : v.toFixed(2) + 's'; };
+
+    var draws = a.map(function (x) { return x.f1; }).filter(function (v) { return v > 0; });
+    var rels = [];
+    a.forEach(function (x) { (x.rl || []).forEach(function (r) { if (r.v > 0) rels.push(r.v); }); });
+    var mn = function (arr) { return Math.min.apply(null, arr); };
+    var mean = function (arr) { return arr.reduce(function (x, y) { return x + y; }, 0) / arr.length; };
+
+    var html = statTile(a.length === 1 ? 'attempt' : 'attempts', a.length, false) +
+      statTile(d.scored ? 'best hit factor' : 'best time', fmt(best), true) +
+      statTile('average', fmt(avg), false);
+    if (draws.length) {
+      html += statTile('best draw', mn(draws).toFixed(2) + 's', false) +
+              statTile('average draw', mean(draws).toFixed(2) + 's', false);
+    }
+    if (rels.length) {
+      html += statTile('best reload', mn(rels).toFixed(2) + 's', false) +
+              statTile('average reload', mean(rels).toFixed(2) + 's', false);
+    }
+    el('dStats').innerHTML = '<div class="sum">' + html + '</div>';
+  }
+
+  function renderDrillList() {
+    var d = drill(), a = d.attempts || [];
+    el('dListCard').hidden = !a.length;
+    var box = el('dList');
+    box.innerHTML = '';
+    if (!a.length) return;
+    var vals = a.map(function (x) { return d.scored ? x.hf : x.t; }).filter(function (v) { return v > 0; });
+    var best = vals.length ? (d.scored ? Math.max.apply(null, vals) : Math.min.apply(null, vals)) : 0;
+
+    a.slice().reverse().forEach(function (x) {
+      var isBest = (d.scored ? x.hf : x.t) === best;
+      var bits = [];
+      if (d.scored) bits.push(x.p + ' pts');
+      if (d.scored && x.hd) { var bd = breakdown(x, drillRounds(d)); if (bd) bits.push(bd); }
+      if (x.f1) bits.push('draw ' + x.f1.toFixed(2));
+      (x.rl || []).forEach(function (r) { bits.push('reload ' + r.v.toFixed(2)); });
+      var row = document.createElement('div');
+      row.className = 'rn';
+      row.innerHTML = '<span class="who"><span class="l1"></span><span class="l2"></span></span>' +
+        '<span class="hf">' + (d.scored ? x.hf.toFixed(2) : x.t.toFixed(2)) + '</span>' +
+        '<button class="x" type="button" aria-label="Remove">&times;</button>';
+      row.querySelector('.l1').textContent = fmtDate(new Date(x.at)) + (d.scored ? '  ' + x.t.toFixed(2) + 's' : '');
+      if (isBest) {
+        var tag = document.createElement('span');
+        tag.className = 'fa';
+        tag.textContent = 'PB';
+        row.querySelector('.l1').appendChild(tag);
+      }
+      row.querySelector('.l2').textContent = bits.join('  \u00b7  ');
+      row.querySelector('.x').addEventListener('click', function () {
+        d.attempts = d.attempts.filter(function (y) { return y.id !== x.id; });
+        persistDrills(); renderDrills();
+      });
+      box.appendChild(row);
+    });
+  }
+
+  el('drillName').addEventListener('input', function () {
+    drill().name = el('drillName').value;
+    persistDrills(); renderDrillChips();
+  });
+  el('dStrings').addEventListener('input', function () {
+    drill().strings = parseStrings(el('dStrings').value);
+    dReloadPicks = null;
+    persistDrills(); renderDrillSetup(); renderDrillRun();
+  });
+  el('dStrings').addEventListener('blur', function () {
+    el('dStrings').value = stringsText(drill().strings);
+  });
+  el('dTimed').addEventListener('click', function () {
+    drill().scored = false; persistDrills(); renderDrillSetup(); renderDrillRun();
+  });
+  el('dScored').addEventListener('click', function () {
+    drill().scored = true; persistDrills(); renderDrillSetup(); renderDrillRun();
+  });
+  el('dDelete').addEventListener('click', function () {
+    var d = drill();
+    if (drills.length < 2) return;
+    if (!confirm('Delete ' + d.name + ' and its ' + d.attempts.length + ' attempts?')) return;
+    drills = drills.filter(function (x) { return x.id !== d.id; });
+    dActive = 0; dhits = []; dReloadPicks = null;
+    persistDrills(); renderDrills();
+  });
+  el('dWipe').addEventListener('click', function () {
+    var d = drill();
+    if (!d.attempts.length) return;
+    if (!confirm('Clear all ' + d.attempts.length + ' attempts from ' + d.name + '?')) return;
+    d.attempts = [];
+    persistDrills(); renderDrills();
+  });
+  el('dpts').addEventListener('input', function () { dhits = []; renderDrillRun(); });
+  Array.prototype.forEach.call(el('dpad').children, function (b) {
+    b.addEventListener('click', function () {
+      dhits.push(b.getAttribute('data-k'));
+      el('dpts').value = '';
+      renderDrillRun();
+    });
+  });
+  el('dUndo').addEventListener('click', function () { dhits.pop(); el('dpts').value = ''; renderDrillRun(); });
+  el('dClear').addEventListener('click', function () { dhits = []; el('dpts').value = ''; renderDrillRun(); });
+
+  el('dSave').addEventListener('click', function () {
+    var d = drill(), c = dCur();
+    if (!(c.t > 0)) return;
+    var ex = dAttemptExtras();
+    var at = { id: uid(), at: new Date().toISOString(), t: c.t };
+    if (d.scored) {
+      at.p = c.p;
+      at.hf = c.hf;
+      if (el('dpts').value.trim() === '' || dhits.length) at.hd = countOf(dhits);
+    }
+    if (ex.f1) at.f1 = ex.f1;
+    if (ex.rl.length) at.rl = ex.rl;
+    d.attempts.push(at);
+    if (!persistDrills()) { d.attempts.pop(); alert('Could not save - this browser is refusing to store data.'); return; }
+    // Same reset as the stage form: leaving the time behind would have the
+    // next attempt measured against the one just saved.
+    dhits = [];
+    el('dtime').value = '';
+    el('dpts').value = '';
+    held = false;
+    renderTimerBar();
+    renderDrills();
+  });
+
+  function renderDrills() {
+    renderDrillChips();
+    renderDrillSetup();
+    renderDrillRun();
+    renderDrillStats();
+    renderDrillList();
+  }
+
+  var TABS = ['stage', 'overall', 'timer', 'log', 'drills'];
+  // Two pages carry a timer bar, the stage form and the drill form. One set of
+  // state drives both: Auto fills whichever page is open, since you are either
+  // scoring a squad or running a drill, never both at once.
+  var BARS = [
+    { time: 'ctime', back: 'shotBack', fwd: 'shotFwd', auto: 'shotAuto', chip: 'tmrChip', info: 'tmrInfo', tab: 'stage' },
+    { time: 'dtime', back: 'dShotBack', fwd: 'dShotFwd', auto: 'dShotAuto', chip: 'dTmrChip', info: 'dTmrInfo', tab: 'drills' }
+  ];
+  var curTab = 'stage';
+  function activeBar() {
+    for (var i = 0; i < BARS.length; i++) if (BARS[i].tab === curTab) return BARS[i];
+    return BARS[0];
+  }
+
   function renderTimerBar() {
-    var chip = el('tmrChip'), info = el('tmrInfo');
-    chip.textContent = bleOn ? 'Timer on' : 'No timer';
-    chip.className = 'pill' + (bleOn ? ' on' : '');
-    el('shotAuto').setAttribute('aria-pressed', String(auto));
-    el('shotBack').disabled = shotIdx <= 0;
-    el('shotFwd').disabled = shotIdx < 0 || shotIdx >= shots.length - 1;
-    if (!shots.length) { info.textContent = bleOn ? 'Waiting for the beep' : ''; return; }
-    var first = shots[0].cum.toFixed(2);
-    var n = shots.length;
-    // Only claim a shot is selected when the field actually holds that shot's
-    // time - otherwise a hand-typed value would be labelled as a shot.
-    var picked = shotIdx >= 0 && shotIdx !== n - 1 && shots[shotIdx] &&
-      el('ctime').value.trim() === shots[shotIdx].cum.toFixed(2);
-    info.textContent = picked
-      ? 'Shot ' + (shotIdx + 1) + ' of ' + n + ' \u00b7 1st ' + first
-      : n + (n === 1 ? ' shot' : ' shots') + ' \u00b7 1st ' + first;
+    BARS.forEach(function (b) {
+      var chip = el(b.chip), info = el(b.info);
+      chip.textContent = bleOn ? 'Timer on' : 'No timer';
+      chip.className = 'pill' + (bleOn ? ' on' : '');
+      el(b.auto).setAttribute('aria-pressed', String(auto));
+      el(b.back).disabled = shotIdx <= 0;
+      el(b.fwd).disabled = shotIdx < 0 || shotIdx >= shots.length - 1;
+      if (!shots.length) { info.textContent = bleOn ? 'Waiting for the beep' : ''; return; }
+      var first = shots[0].cum.toFixed(2);
+      var n = shots.length;
+      // Only claim a shot is selected when the field actually holds that shot's
+      // time - otherwise a hand-typed value would be labelled as a shot.
+      var picked = shotIdx >= 0 && shotIdx !== n - 1 && shots[shotIdx] &&
+        el(b.time).value.trim() === shots[shotIdx].cum.toFixed(2);
+      info.textContent = picked
+        ? 'Shot ' + (shotIdx + 1) + ' of ' + n + ' \u00b7 1st ' + first
+        : n + (n === 1 ? ' shot' : ' shots') + ' \u00b7 1st ' + first;
+    });
   }
 
   function applyShot() {
     if (shotIdx < 0 || !shots[shotIdx]) return;
-    el('ctime').value = shots[shotIdx].cum.toFixed(2);
+    var b = activeBar();
+    el(b.time).value = shots[shotIdx].cum.toFixed(2);
+    if (b.tab === 'drills') { renderDrillRun(); return; }
     lastPH = 'points';
     update();
   }
@@ -1580,6 +2149,10 @@
 
   el('shotBack').addEventListener('click', function () { stepShot(-1); });
   el('shotFwd').addEventListener('click', function () { stepShot(1); });
+  el('dShotBack').addEventListener('click', function () { stepShot(-1); });
+  el('dShotFwd').addEventListener('click', function () { stepShot(1); });
+  el('dShotAuto').addEventListener('click', function () { el('shotAuto').click(); });
+  el('dtime').addEventListener('input', function () { held = true; renderTimerBar(); renderDrillRun(); });
 
   el('shotAuto').addEventListener('click', function () {
     auto = !auto;
@@ -2019,8 +2592,11 @@
       el('tab' + cap).setAttribute('aria-pressed', String(t === name));
       el('view' + cap).hidden = t !== name;
     });
+    curTab = name;
     if (name === 'overall') renderOverall();
     if (name === 'log') renderLog();
+    if (name === 'drills') renderDrills();
+    renderTimerBar();
   }
   TABS.forEach(function (t) {
     var cap = t.charAt(0).toUpperCase() + t.slice(1);
@@ -2141,6 +2717,7 @@
   function clearShots() {
     shots = [];
     shotIdx = -1;
+    dReloadPicks = null;
     el('bleTime').value = '';
     renderShots();
     renderTimerBar();
@@ -2150,15 +2727,17 @@
     var p = parseAmg(dv);
     if (!p) return;
     el('bleShotsCard').hidden = false;
-    if (p.start) { held = false; clearShots(); return; }
+    if (p.start) { held = false; clearShots(); return; }  // clearShots drops the reload picks too
     var last = shots[shots.length - 1];
     if (last && last.n === p.n && last.cum === p.cum) return;  // BLE can redeliver
     shots.push(p);
     el('bleTime').value = p.cum.toFixed(2);
     if (auto && !held) { shotIdx = shots.length - 1; applyShot(); }
     else if (shotIdx < 0) shotIdx = shots.length - 1;
+    dReloadPicks = null;   // the string changed; re-detect rather than keep a stale pick
     renderShots();
     renderTimerBar();
+    renderDrillRun();
   }
 
   el('bleReset').addEventListener('click', clearShots);
@@ -2325,6 +2904,7 @@
   load();
   loadSessions();
   loadRoster();
+  loadDrills();
   migrateRoster();
   el('bMinor').setAttribute('aria-pressed', String(!state.major));
   el('bMajor').setAttribute('aria-pressed', String(state.major));

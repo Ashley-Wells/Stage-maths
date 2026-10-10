@@ -381,6 +381,11 @@ Static files, no build step. GitHub Pages: Settings → Pages, deploy from
 `main`, folder `/ (root)`.
 
 Bump `CACHE` in `sw.js` and `BUILD` in `index.html` together on every change.
+
+Tapping the build line at the foot of the page clears the caches, drops the
+service worker and reloads, which is the reliable way to get off a stale
+build. It refuses while offline, since clearing the caches with no signal
+would leave nothing to load. Saved data is untouched either way.
 They're shown at the foot of the page, so you can tell at a glance whether a
 phone is running the code you just shipped — worth checking before debugging
 anything a phone reports.

@@ -271,13 +271,16 @@
 
   .empty { font-size: 13.5px; color: var(--soft); text-align: center; padding: 22px 10px; }
 
-  .build { font-size: 11px; color: var(--soft); text-align: center; opacity: .55; margin: 18px 0 4px; }
+  .build { font-size: 11px; color: var(--soft); text-align: center; opacity: .55; margin: 18px 0 4px;
+    cursor: pointer; padding: 8px; min-height: 30px; }
 
   .tmrbar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: -2px 0 12px; }
   .tmrbar .step { flex: none; width: 38px; padding: 8px 0; text-align: center; font-size: 17px; line-height: 1; }
   .tmrbar .step[disabled] { opacity: .35; }
-  .tmrbar #shotAuto { flex: none; }
-  .tmrbar #shotAuto[aria-pressed="true"] { background: var(--accent); color: var(--bg); border-color: var(--accent); }
+  /* Class, not id: the drill page has its own Auto button, and an id-based
+     rule left it unstyled, so Auto looked like it had not stayed on. */
+  .tmrbar .autob { flex: none; }
+  .tmrbar .autob[aria-pressed="true"] { background: var(--accent); color: var(--bg); border-color: var(--accent); }
   .tmrinfo { flex: 1 1 100%; order: 3; font-size: 12px; color: var(--soft); font-variant-numeric: tabular-nums; }
   .pill { flex: none; margin-left: auto; font-size: 11.5px; font-weight: 600; padding: 4px 10px;
     border-radius: 999px; background: var(--raised); color: var(--soft); white-space: nowrap; }
@@ -350,7 +353,7 @@
       </div>
       <div class="tmrbar">
         <button type="button" class="ghost step" id="shotBack" aria-label="Previous shot">&lsaquo;</button>
-        <button type="button" class="ghost" id="shotAuto" aria-pressed="false">Auto</button>
+        <button type="button" class="ghost autob" id="shotAuto" aria-pressed="false">Auto</button>
         <button type="button" class="ghost step" id="shotFwd" aria-label="Next shot">&rsaquo;</button>
         <span class="pill" id="tmrChip">No timer</span>
         <span class="tmrinfo" id="tmrInfo"></span>
@@ -573,7 +576,7 @@
       </div>
       <div class="tmrbar">
         <button type="button" class="ghost step" id="dShotBack" aria-label="Previous shot">&lsaquo;</button>
-        <button type="button" class="ghost" id="dShotAuto" aria-pressed="false">Auto</button>
+        <button type="button" class="ghost autob" id="dShotAuto" aria-pressed="false">Auto</button>
         <button type="button" class="ghost step" id="dShotFwd" aria-label="Next shot">&rsaquo;</button>
         <span class="pill" id="dTmrChip">No timer</span>
         <span class="tmrinfo" id="dTmrInfo"></span>
@@ -627,8 +630,35 @@
 <script>
 (function () {
   var el = function (id) { return document.getElementById(id); };
-  var BUILD = 'v29';  // bump with CACHE in sw.js
-  el('build').textContent = 'build ' + BUILD;
+  var BUILD = 'v30';  // bump with CACHE in sw.js
+  el('build').textContent = 'build ' + BUILD + ' \u00b7 tap to update';
+
+  // An escape hatch. A stale service worker has sent us chasing bugs that were
+  // already fixed, and there was no way to tell from the phone. This drops the
+  // caches and the worker and reloads - but refuses while offline, since doing
+  // it with no signal would leave nothing to load.
+  el('build').addEventListener('click', function () {
+    if (navigator.onLine === false) {
+      alert('No connection. Updating now would clear the offline copy and leave nothing to load.');
+      return;
+    }
+    if (!confirm('Fetch the latest build?\n\nYou are on ' + BUILD + '. Saved data is not touched.')) return;
+    var reload = function () { location.replace(location.pathname + '?u=' + Date.now()); };
+    var killCaches = (window.caches && caches.keys)
+      ? caches.keys().then(function (ks) {
+          return Promise.all(ks.map(function (k) { return caches.delete(k); }));
+        })
+      : Promise.resolve();
+    killCaches
+      .then(function () {
+        if (navigator.serviceWorker && navigator.serviceWorker.getRegistrations) {
+          return navigator.serviceWorker.getRegistrations().then(function (rs) {
+            return Promise.all(rs.map(function (r) { return r.unregister(); }));
+          });
+        }
+      })
+      .then(reload, reload);
+  });
   // v1 is still read but never written again, so a bad migration cannot destroy
   // a match that already exists. Delete nothing; just stop writing to it.
   var KEY_V1 = 'stage-maths:match:v1';

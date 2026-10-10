@@ -612,7 +612,7 @@
 <script>
 (function () {
   var el = function (id) { return document.getElementById(id); };
-  var BUILD = 'v26';  // bump with CACHE in sw.js
+  var BUILD = 'v27';  // bump with CACHE in sw.js
   el('build').textContent = 'build ' + BUILD;
   // v1 is still read but never written again, so a bad migration cannot destroy
   // a match that already exists. Delete nothing; just stop writing to it.
@@ -646,10 +646,10 @@
   // "2+2" is two shots, a reload, two shots. The round count falls out of it,
   // and so do the shot numbers that follow a reload.
   function parseStrings(txt) {
-    var parts = String(txt == null ? '' : txt).split(/[^0-9]+/)
+    return String(txt == null ? '' : txt).split(/[^0-9]+/)
       .filter(function (x) { return x !== ''; })
-      .map(function (x) { return Math.max(1, Math.min(60, parseInt(x, 10))); });
-    return parts.length ? parts.slice(0, 10) : [6];
+      .map(function (x) { return Math.max(1, Math.min(60, parseInt(x, 10))); })
+      .slice(0, 10);
   }
   function stringsText(arr) { return (arr || []).join('+'); }
   function drillRounds(d) {
@@ -1808,18 +1808,24 @@
     c.appendChild(add);
   }
 
-  function renderDrillSetup() {
-    var d = drill();
-    el('drillName').value = d.name || '';
-    el('dStrings').value = stringsText(d.strings);
-    el('dTimed').setAttribute('aria-pressed', String(!d.scored));
-    el('dScored').setAttribute('aria-pressed', String(!!d.scored));
-    el('dDelete').hidden = drills.length < 2;
-    var rl = reloadShots(d);
+  function renderShotsHint() {
+    var d = drill(), rl = reloadShots(d);
     el('dShotsHint').textContent = drillRounds(d) + ' shots' +
       (rl.length ? ', ' + rl.length + (rl.length === 1 ? ' reload before shot ' : ' reloads before shots ') + rl.join(' and ')
                  : ', no reload') +
       (d.scored ? ' \u00b7 ' + dMaxPts() + ' points on offer' : '');
+  }
+
+  function renderDrillSetup() {
+    var d = drill();
+    // Rewriting a field mid-keystroke moved the caret and ate the "+", which
+    // made the shot count impossible to type. Leave a focused box alone.
+    if (document.activeElement !== el('drillName')) el('drillName').value = d.name || '';
+    if (document.activeElement !== el('dStrings')) el('dStrings').value = stringsText(d.strings);
+    el('dTimed').setAttribute('aria-pressed', String(!d.scored));
+    el('dScored').setAttribute('aria-pressed', String(!!d.scored));
+    el('dDelete').hidden = drills.length < 2;
+    renderShotsHint();
 
     var dc = el('dDistChips');
     dc.innerHTML = '';
@@ -2022,12 +2028,14 @@
     persistDrills(); renderDrillChips();
   });
   el('dStrings').addEventListener('input', function () {
-    drill().strings = parseStrings(el('dStrings').value);
+    var parsed = parseStrings(el('dStrings').value);
+    if (!parsed.length) return;   // mid-edit, or cleared: keep what we had
+    drill().strings = parsed;
     dReloadPicks = null;
-    persistDrills(); renderDrillSetup(); renderDrillRun();
+    persistDrills(); renderShotsHint(); renderDrillRun();
   });
   el('dStrings').addEventListener('blur', function () {
-    el('dStrings').value = stringsText(drill().strings);
+    el('dStrings').value = stringsText(drill().strings);   // tidy up on the way out
   });
   el('dTimed').addEventListener('click', function () {
     drill().scored = false; persistDrills(); renderDrillSetup(); renderDrillRun();

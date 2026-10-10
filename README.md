@@ -280,7 +280,12 @@ fire, every time. That is what makes solo tracking work: your raw times across
 attempts compare directly, where match stages never could because they change
 every week.
 
-Set one up with a name, a type, a shot structure and the first target:
+Set one up with a name, a description, a type, a shot structure and the first
+target:
+
+- **Description** is free text, kept with the drill and echoed on the attempt
+  card so the procedure is readable while you shoot without scrolling back.
+  Line breaks survive, so a drill can carry steps.
 
 - **Timed or scored.** Timed hides points entirely and ranks on the clock —
   right for steel. Scored keeps points, hit factor and the tap pad.

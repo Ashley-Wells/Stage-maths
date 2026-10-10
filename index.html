@@ -164,6 +164,17 @@
   .field input::placeholder { color: var(--soft); font-weight: 400; }
   .field input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-bg); }
   .hint { font-size: 12.5px; color: var(--soft); margin: 0 0 12px; }
+  .blk { display: block; font-size: 15px; color: var(--soft); margin: 2px 0 6px; }
+  textarea.note {
+    display: block; width: 100%; box-sizing: border-box; font: inherit; font-size: 15px;
+    color: var(--ink); padding: 9px 12px; min-height: 66px; margin-bottom: 12px;
+    background: var(--raised); border: 1px solid var(--line); border-radius: var(--r-sm);
+    resize: none; overflow: hidden; transition: border-color 140ms ease, box-shadow 140ms ease;
+  }
+  textarea.note::placeholder { color: var(--soft); }
+  textarea.note:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-bg); }
+  .desc { font-size: 13.5px; color: var(--soft); margin: -2px 0 12px; white-space: pre-wrap; }
+  .desc:empty { display: none; }
   .lead { font-size: 13px; color: var(--soft); margin: 0 0 12px; }
 
   .pad { display: grid; grid-template-columns: repeat(4, 1fr); gap: 7px; margin: 4px 0 9px; }
@@ -532,6 +543,9 @@
         <label for="drillName">Drill</label>
         <input type="text" id="drillName" placeholder="Name" autocomplete="off">
       </div>
+      <label class="blk" for="drillDesc">Description</label>
+      <textarea id="drillDesc" class="note" rows="2" spellcheck="false"
+        placeholder="Two plates at 20m, reload, two more"></textarea>
       <div class="seg" role="group" aria-label="Drill type">
         <button type="button" id="dTimed" aria-pressed="true">Timed</button>
         <button type="button" id="dScored" aria-pressed="false">Scored</button>
@@ -552,6 +566,7 @@
 
     <div class="card">
       <p class="lead" id="dRunLead">This attempt</p>
+      <p class="desc" id="dRunDesc"></p>
       <div class="field">
         <label for="dtime">Time</label>
         <input type="number" id="dtime" placeholder="—" min="0" max="300" step="0.01" inputmode="decimal">
@@ -612,7 +627,7 @@
 <script>
 (function () {
   var el = function (id) { return document.getElementById(id); };
-  var BUILD = 'v27';  // bump with CACHE in sw.js
+  var BUILD = 'v28';  // bump with CACHE in sw.js
   el('build').textContent = 'build ' + BUILD;
   // v1 is still read but never written again, so a bad migration cannot destroy
   // a match that already exists. Delete nothing; just stop writing to it.
@@ -640,7 +655,7 @@
   // distance keeps averages populated, where four would spread them too thin.
   function groupLabel(d, hard) { return distLabel(d) + (hard ? ' \u00b7 partial or no-shoot' : ''); }
   function newDrill(n) {
-    return { id: uid(), name: 'Drill ' + n, scored: false, strings: [6], dist: null, hard: false, attempts: [] };
+    return { id: uid(), name: 'Drill ' + n, desc: '', scored: false, strings: [6], dist: null, hard: false, attempts: [] };
   }
   function drill() { return drills[dActive]; }
   // "2+2" is two shots, a reload, two shots. The round count falls out of it,
@@ -1555,6 +1570,7 @@
     var d = {
       id: str(raw.id, 40) || uid(),
       name: str(raw.name, 60) || 'Drill',
+      desc: str(raw.desc, 400),
       scored: !!raw.scored,
       strings: strings.length ? strings : [6],
       dist: DISTS.indexOf(Math.round(fin(raw.dist))) >= 0 ? Math.round(fin(raw.dist)) : null,
@@ -1822,6 +1838,8 @@
     // made the shot count impossible to type. Leave a focused box alone.
     if (document.activeElement !== el('drillName')) el('drillName').value = d.name || '';
     if (document.activeElement !== el('dStrings')) el('dStrings').value = stringsText(d.strings);
+    if (document.activeElement !== el('drillDesc')) el('drillDesc').value = d.desc || '';
+    growDesc();
     el('dTimed').setAttribute('aria-pressed', String(!d.scored));
     el('dScored').setAttribute('aria-pressed', String(!!d.scored));
     el('dDelete').hidden = drills.length < 2;
@@ -1877,6 +1895,7 @@
 
   function renderDrillRun() {
     var d = drill();
+    el('dRunDesc').textContent = d.desc || '';
     el('dScoredBox').hidden = !d.scored;
     if (d.scored) {
       if (el('dpts').value.trim() === '' && !dhits.length) el('dpts').value = '';
@@ -2026,6 +2045,22 @@
   el('drillName').addEventListener('input', function () {
     drill().name = el('drillName').value;
     persistDrills(); renderDrillChips();
+  });
+  // Grow to fit rather than clipping: a drill description is a procedure and
+  // a half-visible instruction is worse than none.
+  function growDesc() {
+    var t = el('drillDesc');
+    t.style.height = 'auto';
+    // border-box counts the border in height, scrollHeight does not, so adding
+    // scrollHeight alone leaves the last line clipped by the border width.
+    var border = t.offsetHeight - t.clientHeight;
+    t.style.height = Math.max(66, t.scrollHeight + border) + 'px';
+  }
+  el('drillDesc').addEventListener('input', function () {
+    drill().desc = el('drillDesc').value.slice(0, 400);
+    persistDrills();
+    el('dRunDesc').textContent = drill().desc;
+    growDesc();
   });
   el('dStrings').addEventListener('input', function () {
     var parsed = parseStrings(el('dStrings').value);

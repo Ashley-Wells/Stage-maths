@@ -161,6 +161,7 @@
     transition: border-color 140ms ease, box-shadow 140ms ease;
   }
   .field input[type=text] { width: 150px; text-align: left; font-size: 17px; }
+  .field input.tm { width: 108px; text-align: right; font-size: 20px; }   /* a time, typed till-style */
   .field input::placeholder { color: var(--soft); font-weight: 400; }
   .field input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-bg); }
   .hint { font-size: 12.5px; color: var(--soft); margin: 0 0 12px; }
@@ -351,7 +352,7 @@
       </div>
       <div class="field">
         <label for="ctime">Time called</label>
-        <input type="number" id="ctime" value="18" placeholder="—" min="0" max="300" step="0.01" inputmode="decimal">
+        <input type="text" class="tm" id="ctime" value="18" placeholder="—" inputmode="decimal" autocomplete="off" spellcheck="false">
       </div>
       <div class="tmrbar">
         <button type="button" class="ghost step" id="shotBack" aria-label="Previous shot">&lsaquo;</button>
@@ -437,7 +438,7 @@
       <div id="bleShots"></div>
       <div class="field" style="margin-top:12px">
         <label for="bleTime">Captured time</label>
-        <input type="number" id="bleTime" placeholder="—" step="0.01" inputmode="decimal">
+        <input type="text" class="tm" id="bleTime" placeholder="—" inputmode="decimal" autocomplete="off" spellcheck="false">
       </div>
       <button type="button" id="bleUse" class="primary">Use this time</button>
     </div>
@@ -579,7 +580,7 @@
       <p class="desc" id="dRunDesc"></p>
       <div class="field">
         <label for="dtime">Time</label>
-        <input type="number" id="dtime" placeholder="—" min="0" max="300" step="0.01" inputmode="decimal">
+        <input type="text" class="tm" id="dtime" placeholder="—" inputmode="decimal" autocomplete="off" spellcheck="false">
       </div>
       <div class="tmrbar">
         <button type="button" class="ghost step" id="dShotBack" aria-label="Previous shot">&lsaquo;</button>
@@ -637,7 +638,7 @@
 <script>
 (function () {
   var el = function (id) { return document.getElementById(id); };
-  var BUILD = 'v33';  // bump with CACHE in sw.js
+  var BUILD = 'v34';  // bump with CACHE in sw.js
   el('build').textContent = 'build ' + BUILD + ' \u00b7 tap to update';
 
   // An escape hatch. A stale service worker has sent us chasing bugs that were
@@ -1443,7 +1444,26 @@
 
   el('cpts').addEventListener('input', function () { lastPH = 'points'; hits = []; paintPad(); });
   el('chfIn').addEventListener('input', function () { lastPH = 'hf'; });
-  el('ctime').addEventListener('input', function () { held = true; renderTimerBar(); });
+  // Times are typed till-style: the digits are centiseconds, so 2358 reads
+  // 23.58 as you go and backspace drops the last digit. Only user input comes
+  // through here - a time the timer or the solver writes is left exactly as
+  // written. Dots are ignored because once this has inserted one, the next
+  // digit lands after it; rebuilding from the digits alone is what keeps the
+  // field stable from one keystroke to the next.
+  function tillTime(input) {
+    // Leading zeros are the display's, not the user's: backspacing 0.02 leaves
+    // 0.0, whose digits are 00, and that must read as nothing typed, not 0.00.
+    var digits = input.value.replace(/[^0-9]/g, '').replace(/^0+/, '');
+    if (!digits) { if (input.value !== '') input.value = ''; return; }
+    input.value = (parseInt(digits.slice(-7), 10) / 100).toFixed(2);
+    // Pin the caret to the end so the next digit always appends. This is the
+    // reason the fields are text inputs: a number input will not allow it.
+    try { input.setSelectionRange(input.value.length, input.value.length); } catch (e) {}
+  }
+
+  // Registered before the solver's own input listener, so update() sees the
+  // formatted value on the same keystroke rather than one behind.
+  el('ctime').addEventListener('input', function () { tillTime(this); held = true; renderTimerBar(); });
   ['ctime', 'cpts', 'chfIn'].forEach(function (id) { el(id).addEventListener('input', update); });
 
   Array.prototype.forEach.call(document.querySelectorAll('input[type=number]'), function (i) {
@@ -2280,7 +2300,7 @@
   el('dShotBack').addEventListener('click', function () { stepShot(-1); });
   el('dShotFwd').addEventListener('click', function () { stepShot(1); });
   el('dShotAuto').addEventListener('click', function () { el('shotAuto').click(); });
-  el('dtime').addEventListener('input', function () { held = true; renderTimerBar(); renderDrillRun(); });
+  el('dtime').addEventListener('input', function () { tillTime(this); held = true; renderTimerBar(); renderDrillRun(); });
 
   el('shotAuto').addEventListener('click', function () {
     auto = !auto;
@@ -3010,6 +3030,8 @@
       .then(function () { bleLog('Sent ' + el('bleHex').value.trim()); })
       .catch(function (err) { bleLog('Write failed: ' + err.message); });
   });
+
+  el('bleTime').addEventListener('input', function () { tillTime(this); });
 
   el('bleUse').addEventListener('click', function () {
     var v = parseFloat(el('bleTime').value);

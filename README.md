@@ -23,6 +23,10 @@ target was like — distance, and whether it was a partial or had a no-shoot.
 Those last two feed Draw by distance on the Log tab and can be left alone if
 you don't care.
 
+Times are typed till-style: the digits are centiseconds, so `2358` reads
+`23.58` as you go and backspace drops the last digit. No decimal point to
+find on the keyboard. A time the timer fills in is left exactly as written.
+
 Enter any two of time, hit factor and points and the third is calculated.
 Whichever you touched last is treated as known. The tap pad starts from a
 clean run, so you only tap what was dropped.

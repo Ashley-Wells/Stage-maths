@@ -330,9 +330,11 @@
         <label for="rounds">Round count</label>
         <input type="number" id="rounds" value="24" min="1" max="60" step="1" inputmode="numeric">
       </div>
-      <p class="hint" style="margin-bottom:6px">First target &mdash; for comparing draws</p>
-      <div class="chips who" id="distChips"></div>
-      <div class="chips who" id="hardChips"></div>
+      <div id="distBlock">
+        <p class="hint" style="margin-bottom:6px">First target &mdash; for comparing draws</p>
+        <div class="chips who" id="distChips"></div>
+        <div class="chips who" id="hardChips"></div>
+      </div>
       <div class="headrow">
         <p class="hint" id="ptsHint">120 points on offer</p>
         <button type="button" class="ghost" id="delStage">Delete stage</button>
@@ -635,7 +637,7 @@
 <script>
 (function () {
   var el = function (id) { return document.getElementById(id); };
-  var BUILD = 'v32';  // bump with CACHE in sw.js
+  var BUILD = 'v33';  // bump with CACHE in sw.js
   el('build').textContent = 'build ' + BUILD + ' \u00b7 tap to update';
 
   // An escape hatch. A stale service worker has sent us chasing bugs that were
@@ -1227,7 +1229,12 @@
     renderDistChips();
   }
 
+  // Draw comparison is a training concern. At a match the first-target chips
+  // and the first-shot readout are noise, so match mode hides them.
+  function matchMode() { return state.sessKind === 'match'; }
+
   function renderDistChips() {
+    el('distBlock').hidden = matchMode();
     var c = el('distChips');
     c.innerHTML = '';
     var cur = stage().dist || null;
@@ -1780,8 +1787,11 @@
       ? 'A match: kept in the log and shareable, left out of head to head, the trend and the draw tables.'
       : 'Training: counts towards head to head, the trend and the draw tables.';
   }
-  el('kTraining').addEventListener('click', function () { state.sessKind = 'training'; persist(); renderKind(); });
-  el('kMatch').addEventListener('click', function () { state.sessKind = 'match'; persist(); renderKind(); });
+  function setKind(k) {
+    state.sessKind = k; persist(); renderKind(); renderDistChips(); renderTimerBar();
+  }
+  el('kTraining').addEventListener('click', function () { setKind('training'); });
+  el('kMatch').addEventListener('click', function () { setKind('match'); });
 
   el('sessSave').addEventListener('click', function () {
     var n = runCount(state.stages);
@@ -2239,9 +2249,10 @@
       // time - otherwise a hand-typed value would be labelled as a shot.
       var picked = shotIdx >= 0 && shotIdx !== n - 1 && shots[shotIdx] &&
         el(b.time).value.trim() === shots[shotIdx].cum.toFixed(2);
-      info.textContent = picked
-        ? 'Shot ' + (shotIdx + 1) + ' of ' + n + ' \u00b7 1st ' + first
-        : n + (n === 1 ? ' shot' : ' shots') + ' \u00b7 1st ' + first;
+      var tail = matchMode() ? '' : ' \u00b7 1st ' + first;
+      info.textContent = (picked
+        ? 'Shot ' + (shotIdx + 1) + ' of ' + n
+        : n + (n === 1 ? ' shot' : ' shots')) + tail;
     });
   }
 
@@ -2295,7 +2306,7 @@
         var bits = [e.p + ' pts'];
         var bd = breakdown(e, st.rounds);
         if (bd) bits.push(bd);
-        if (e.f1) bits.push('1st ' + e.f1.toFixed(2));
+        if (e.f1 && ss.kind !== 'match') bits.push('1st ' + e.f1.toFixed(2));
         var r = document.createElement('div');
         r.className = 'rn';
         r.innerHTML = '<span class="who"><span class="l1"></span><span class="l2"></span></span>' +

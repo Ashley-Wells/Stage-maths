@@ -95,7 +95,13 @@ number against the wrong field.
 
 The choice is remembered, so a restart mid-match does not quietly flip it
 back, and the confirm names the kind in capitals so a wrong toggle is caught
-before it lands. A match shared to another phone arrives still flagged, so it
+before it lands.
+
+Match mode also hides the draw paraphernalia, which is a training concern:
+the first-target chips on the stage card, the `1st` figure in the timer
+readout, and the first-shot time on a match's rows in the log. The first shot
+is still captured on each run — it is simply not shown — so nothing is lost
+if it is ever wanted. A match shared to another phone arrives still flagged, so it
 stays out of their training stats too.
 
 **Save session** snapshots the whole board — every stage, its round count and

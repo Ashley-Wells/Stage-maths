@@ -84,6 +84,20 @@ being saved is one of the shots in the timer's current string — otherwise it
 would be borrowed from whoever shot last. Runs recorded before this existed
 show points alone.
 
+### Training or match
+
+A session is saved as one or the other, chosen on the save card. **Training**
+counts towards head to head, the trend and the draw tables. **Match** is kept
+in the log, tagged, shareable and backed up like any session — but left out
+of every training figure. The people at a match are not your training
+partners, and averaging them in would skew every "share of the winner"
+number against the wrong field.
+
+The choice is remembered, so a restart mid-match does not quietly flip it
+back, and the confirm names the kind in capitals so a wrong toggle is caught
+before it lands. A match shared to another phone arrives still flagged, so it
+stays out of their training stats too.
+
 **Save session** snapshots the whole board — every stage, its round count and
 every run — under a name, defaulting to today's date. It then offers to clear
 the runs so you can start fresh, keeping stage names and round counts since

@@ -476,6 +476,11 @@
   <div id="viewLog" hidden>
     <div class="card">
       <p class="lead">Save this session</p>
+      <div class="seg" role="group" aria-label="Session kind">
+        <button type="button" id="kTraining" aria-pressed="true">Training</button>
+        <button type="button" id="kMatch" aria-pressed="false">Match</button>
+      </div>
+      <p class="hint" id="kindHint"></p>
       <div class="field">
         <label for="sessName">Name</label>
         <input type="text" id="sessName" placeholder="date" autocomplete="off">
@@ -630,7 +635,7 @@
 <script>
 (function () {
   var el = function (id) { return document.getElementById(id); };
-  var BUILD = 'v31';  // bump with CACHE in sw.js
+  var BUILD = 'v32';  // bump with CACHE in sw.js
   el('build').textContent = 'build ' + BUILD + ' \u00b7 tap to update';
 
   // An escape hatch. A stale service worker has sent us chasing bugs that were
@@ -757,6 +762,7 @@
     } catch (e) {}
     if (!state.stages.length) state.stages = [newStage(1)];
     if (state.standMode !== 'best') state.standMode = 'all';
+    if (state.sessKind !== 'match') state.sessKind = 'training';
     if (!(state.active >= 0) || state.active >= state.stages.length) state.active = 0;
   }
   function persist() { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {} }
@@ -1509,6 +1515,7 @@
       id: str(o.id, 40) || uid(),
       name: str(o.name, 60) || 'Shared session',
       date: str(o.date, 40) || new Date().toISOString(),
+      kind: o.kind === 'match' ? 'match' : 'training',
       major: !!o.major,
       stages: o.stages.slice(0, 40).map(function (st) {
         if (!st || typeof st !== 'object') return null;
@@ -1749,6 +1756,7 @@
       id: uid(),
       name: el('sessName').value.trim() || today(),
       date: new Date().toISOString(),
+      kind: state.sessKind === 'match' ? 'match' : 'training',
       major: !!state.major,
       stages: state.stages.map(function (st) {
         return {
@@ -1764,9 +1772,24 @@
     };
   }
 
+  function renderKind() {
+    var m = state.sessKind === 'match';
+    el('kTraining').setAttribute('aria-pressed', String(!m));
+    el('kMatch').setAttribute('aria-pressed', String(m));
+    el('kindHint').textContent = m
+      ? 'A match: kept in the log and shareable, left out of head to head, the trend and the draw tables.'
+      : 'Training: counts towards head to head, the trend and the draw tables.';
+  }
+  el('kTraining').addEventListener('click', function () { state.sessKind = 'training'; persist(); renderKind(); });
+  el('kMatch').addEventListener('click', function () { state.sessKind = 'match'; persist(); renderKind(); });
+
   el('sessSave').addEventListener('click', function () {
     var n = runCount(state.stages);
     if (!n) { alert('Nothing to save yet - no runs on the board.'); return; }
+    var isMatch = state.sessKind === 'match';
+    if (!confirm(isMatch
+        ? 'Save as a MATCH?\n\nKept in the log and shareable, but left out of the training stats.'
+        : 'Save as TRAINING?\n\nThis counts in head to head, the trend and the draw tables.')) return;
     sessions.push(snapshot());
     if (!persistSessions()) {
       sessions.pop();
@@ -1783,13 +1806,20 @@
     update();
   });
 
+  // The sessions that count as training. A match day is kept in the log and
+  // shareable, but its competitors are not your training partners, so it
+  // would skew every "share of the winner" figure if it were averaged in.
+  function training() {
+    return sessions.filter(function (ss) { return ss.kind !== 'match'; });
+  }
+
   // Head to head across every saved session. Hit factor is not comparable
   // between different stages, so each shooter is scored as a percentage of
   // that stage's winner and those percentages are averaged. Stages with only
   // one shooter are skipped - being 100% of yourself says nothing.
   function headToHead() {
     var m = {}, stagesUsed = 0;
-    sessions.forEach(function (ss) {
+    training().forEach(function (ss) {
       (ss.stages || []).forEach(function (st) {
         var groups = byShooter(st.entries);
         if (groups.length < 2) return;
@@ -2313,7 +2343,7 @@
   // measure as head to head, kept session by session so it can be plotted.
   function trendData() {
     var people = {}, labels = [];
-    sessions.forEach(function (ss) {
+    training().forEach(function (ss) {
       var per = {};
       (ss.stages || []).forEach(function (st) {
         var groups = byShooter(st.entries);
@@ -2346,7 +2376,7 @@
   function drawTable() {
     var m = {}, stagesUsed = 0, pb = {};
     // Personal best over every timed draw, including stages nobody else shot.
-    sessions.forEach(function (ss) {
+    training().forEach(function (ss) {
       (ss.stages || []).forEach(function (st) {
         (st.entries || []).forEach(function (e) {
           if (!(e.f1 > 0)) return;
@@ -2355,7 +2385,7 @@
         });
       });
     });
-    sessions.forEach(function (ss) {
+    training().forEach(function (ss) {
       (ss.stages || []).forEach(function (st) {
         var per = {};
         (st.entries || []).forEach(function (e) {
@@ -2386,7 +2416,7 @@
   // that recorded a distance count, and only distances with data are shown.
   function distTable() {
     var buckets = {};
-    sessions.forEach(function (ss) {
+    training().forEach(function (ss) {
       var when = new Date(ss.date).getTime() || 0;
       (ss.stages || []).forEach(function (st) {
         if (!st.dist) return;
@@ -2598,6 +2628,7 @@
   el('trend').addEventListener('pointercancel', trendLeave);
 
   function renderLog() {
+    renderKind();
     el('sessName').placeholder = today();
     var n = runCount(state.stages);
     el('sessHint').textContent = n
@@ -2626,7 +2657,7 @@
       'Average share of the stage winner across ' + h.stages +
       (h.stages === 1 ? ' stage' : ' stages') +
       '. Hit factor does not compare between different stages, so each shooter is scored against whoever won that stage. ' +
-      'Stages only one person shot are left out, and repeat runs count as the shooter\u2019s best.';
+      'Stages only one person shot are left out, repeat runs count as the shooter\u2019s best, and match days are not included.';
 
     renderTrend();
     renderDraw();
@@ -2652,6 +2683,12 @@
         '</span></div><button class="sh-b ghost" type="button">Share</button>' +
         '<button class="x" type="button" aria-label="Delete session">&times;</button>';
       head.querySelector('b').textContent = ss.name;
+      if (ss.kind === 'match') {
+        var mt = document.createElement('span');
+        mt.className = 'fa';
+        mt.textContent = 'Match';
+        head.querySelector('b').appendChild(mt);
+      }
       head.addEventListener('click', function () {
         openSess = openSess === ss.id ? null : ss.id;
         renderLog();

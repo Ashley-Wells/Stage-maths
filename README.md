@@ -317,6 +317,15 @@ v39 sent the full `88 13`, which is the likely reason for the resends; v40
 answers every compact request compactly and full ones in full. Gadgetbridge's
 code reads compact numbers but always replies in full.
 
+**v40 on the real C2:** it accepted the compact OK but kept resending
+"connection ready" every 5 s. **v41** answers a protobuf request with the
+protobuf form of OK, which watches use for Gadgetbridge's protobuf messages
+and Gadgetbridge uses for the ones it handles: status, request id, offset, then
+kept and no error. For request #3, id 2: `11 00 00 83 b3 13 00 02 00 00 00 00
+00 00 00 fe b3`. If the same request still comes again, the app also sends,
+once per connection, a protobuf response (5044) on the same id that echoes its
+content back (`6a 02 72 00`). The log shows which of the two stopped it.
+
 Leads on how shots arrive, none confirmed: the event-sharing service has an
 alert type `XERO_CHRONOGRAPH` (15) and the C2 claims the `EVENT_SHARING`
 capability (bit 81); Smart field 48 is a `XeroChronographService`, so far

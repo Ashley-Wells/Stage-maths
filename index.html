@@ -710,7 +710,7 @@
 <script>
 (function () {
   var el = function (id) { return document.getElementById(id); };
-  var BUILD = 'v40';  // bump with CACHE in sw.js
+  var BUILD = 'v41';  // bump with CACHE in sw.js
   el('build').textContent = 'build ' + BUILD + ' \u00b7 tap to update';
 
   // An escape hatch. A stale service worker has sent us chasing bugs that were
@@ -3421,7 +3421,8 @@
     var find = function (n) { return chars.filter(function (c) { return c.uuid === '6a4e' + n + '-667b-11e3-949a-0800200c9a66'; })[0]; };
     var rx = find('2810'), tx = find('2820');
     if (!rx || !tx) { bleLog('Garmin: 2810/2820 not found, handshake skipped.'); return; }
-    G = { rx: rx, tx: tx, rec: rec, handle: 0, buf: [], at: 0, q: Promise.resolve(), ready: false };
+    G = { rx: rx, tx: tx, rec: rec, handle: 0, buf: [], at: 0, q: Promise.resolve(), ready: false,
+          pbSeen: {}, pbEchoed: {} };
     bleLog('Garmin: starting handshake');
     gWrite(gMgmt(5, []));                          // close all
   }
@@ -3531,10 +3532,27 @@
       var pb = p.slice(14, 14 + plen), what = pbDescribe(pb, 0, PB_SMART);
       bleLog('Garmin ← ' + gLabel(tt) + ' id ' + rid + ': ' + (what === null ? 'undecoded' : what || '(empty)') +
         (off || total !== plen ? '  (part: ' + off + '+' + plen + ' of ' + total + ')' : '') + '  ' + hexA(pb));
-      if (!off && total === plen) { gAck(tt); return; }     // complete: a plain OK, as Gadgetbridge does
-      // A piece of a longer one: Gadgetbridge's protobuf status, kept, no error.
+      // The protobuf form of OK: status, request id, offset, then kept (0)
+      // and no error (0). Watches acknowledge Gadgetbridge's protobuf
+      // messages this way, and Gadgetbridge uses it for those it handles.
+      // The plain OK (v39, v40) left the C2 resending every 5 s.
+      var complete = !off && total === plen;
       var ps = gResp(tt); ps.push(0); w16(ps, rid); w32(ps, off); ps.push(0, 0);
-      gSend(ps, 'kept part of ' + gName(type) + ' id ' + rid);
+      gSend(ps, (complete ? 'OK to ' + gLabel(tt) : 'kept part of ' + gName(type)) + ' id ' + rid + ' (kept, no error)');
+      // Fallback: if the same request comes again, answer it once with a
+      // protobuf response (5044) on the same id, echoing its content. Only on
+      // a repeat: Gadgetbridge notes some watch firmware dislikes a response
+      // to "connection ready".
+      if (complete && type === 5043) {
+        var key = rid + ':' + hexA(pb);
+        if (G.pbSeen[key] && !G.pbEchoed[key]) {
+          G.pbEchoed[key] = true;
+          var rs = []; w16(rs, 5044); w16(rs, rid); w32(rs, 0); w32(rs, pb.length); w32(rs, pb.length);
+          pb.forEach(function (x) { rs.push(x); });
+          gSend(rs, 'protobuf response id ' + rid + ', echoing it (it repeated): ' + (what || hexA(pb)));
+        }
+        G.pbSeen[key] = true;
+      }
       return;
     }
     bleLog('Garmin ← ' + gLabel(tt) + ' [' + p.length + ']  ' + hexA(p));

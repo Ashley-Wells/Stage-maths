@@ -710,7 +710,7 @@
 <script>
 (function () {
   var el = function (id) { return document.getElementById(id); };
-  var BUILD = 'v39';  // bump with CACHE in sw.js
+  var BUILD = 'v40';  // bump with CACHE in sw.js
   el('build').textContent = 'build ' + BUILD + ' \u00b7 tap to update';
 
   // An escape hatch. A stale service worker has sent us chasing bugs that were
@@ -3270,15 +3270,22 @@
     5050: 'configuration', 5052: 'current time request', 5101: 'auth negotiation' };
   function gName(t) { return G_NAMES[t] || 'message ' + t; }
 
-  // Compact message numbers. The C2 switched to these after we echoed a
-  // capability bit (114) beyond the 104 Gadgetbridge knows: top bit set,
-  // then a 7-bit sequence number, then the low byte of (type - 5000). So
-  // 0x8132 is configuration (5050) #1 and 0x832B a protobuf request (5043)
-  // #3 - worked out from the payloads, not documented. Classic numbers
-  // pass through unchanged.
+  // Compact message numbers, as Gadgetbridge's protocol docs describe them
+  // (GFDI section): the low byte is type - 5000, the high byte has its top
+  // bit set and a 5-bit sequence number. 0x832B is a protobuf request (5043)
+  // #3. A response to one must be compact too, or the device cannot match it
+  // and resends: type bytes 00 and the request's own high byte, then the
+  // request's type in full and the status. Classic numbers pass through.
   function gType(raw) {
-    if (raw & 0x8000) return { type: (raw & 0xFF) + 5000, seq: (raw >> 8) & 0x7F };
-    return { type: raw, seq: -1 };
+    if (raw & 0x8000) return { type: (raw & 0xFF) + 5000, seq: (raw >> 8) & 0x1F, hi: (raw >> 8) & 0xFF };
+    return { type: raw, seq: -1, hi: -1 };
+  }
+  // The start of a response (5000) to the request tt: full or compact to match.
+  function gResp(tt) {
+    var b = [];
+    if (tt && tt.hi >= 0) b.push(0, tt.hi); else w16(b, 5000);
+    w16(b, tt.type);
+    return b;
   }
   function gLabel(t) { return gName(t.type) + (t.seq >= 0 ? ' (#' + t.seq + ')' : ''); }
 
@@ -3287,10 +3294,15 @@
   // from its 2024 definitions; anything else is shown by field number.
   var PB_SMART = { 1: 'calendar service', 2: 'http service', 7: 'data transfer service',
     8: 'device status service', 12: 'find my watch service', 13: 'core service',
-    16: 'sms notification service', 42: 'settings service', 49: 'notifications service' };
+    16: 'sms notification service', 30: 'event sharing service', 42: 'settings service',
+    48: 'Xero chronograph service', 49: 'notifications service' };
   var PB_CORE = { 1: 'sync request', 2: 'sync response', 3: 'get location request',
     4: 'get location response', 5: 'location updates request', 6: 'location updates response',
-    7: 'location updated' };
+    7: 'location updated', 8: 'feature capabilities request', 9: 'feature capabilities response',
+    10: 'guid overwrite request', 11: 'guid overwrite response', 12: 'dual pairing request',
+    13: 'dual pairing response', 14: 'connection ready notification',
+    15: 'check pending software request', 16: 'check pending software response',
+    17: 'time sync request', 18: 'time sync response' };
   function pbDescribe(b, depth, names) {
     var out = [], i = 0;
     var varint = function () {
@@ -3400,9 +3412,9 @@
     for (var i = 0; i < enc.length; i += 19) gWrite([G.handle].concat(enc.slice(i, i + 19)));
     bleLog('Garmin → ' + what);
   }
-  function gAck(type) {
-    var b = []; w16(b, 5000); w16(b, type); b.push(0);
-    gSend(b, 'OK to ' + gName(type));
+  function gAck(tt) {
+    var b = gResp(tt); b.push(0);
+    gSend(b, 'OK to ' + gLabel(tt));
   }
 
   function garminStart(chars, rec) {
@@ -3470,8 +3482,8 @@
         ', protocol ' + proto + ', product ' + prod + ', max packet ' + mps);
       rec.model = model.slice(0, 16); rec.fw = fw.slice(0, 16);
       persistDevices(); renderDevices();
-      gAck(5024);
-      var r = []; w16(r, 5000); w16(r, 5024); r.push(0);
+      gAck(tt);
+      var r = gResp(tt); r.push(0);
       w16(r, 150); w16(r, 0xFFFF); w32(r, 0xFFFFFFFF); w16(r, 7791); w16(r, 0xFFFF);
       wStr(r, 'Stage maths'); wStr(r, 'Stage maths'); wStr(r, 'web');
       r.push(Math.floor(proto / 100) === 1 ? 1 : 0);
@@ -3481,7 +3493,7 @@
     if (type === 5050) {
       var cn = p[0], caps = p.slice(1, 1 + cn);
       bleLog('Garmin ← ' + gLabel(tt) + ': ' + cn + ' bytes of capabilities  ' + hexA(caps));
-      gAck(5050);
+      gAck(tt);
       // Its own capabilities back, trimmed to the 104 bits (13 bytes)
       // Gadgetbridge knows. Echoing them whole claimed bit 114 as well, and
       // the C2 then switched to compact message numbers.
@@ -3500,15 +3512,15 @@
     }
     if (type === 5101) {
       bleLog('Garmin ← auth negotiation  ' + hexA(p));
-      var a = []; w16(a, 5000); w16(a, 5101); a.push(0, 0, p[0] || 0);
+      var a = gResp(tt); a.push(0, 0, p[0] || 0);
       w32(a, p.length >= 5 ? u32(p, 1) : 0);
       gSend(a, 'auth accepted, flags echoed');
       return;
     }
     if (type === 5052) {
       var ref = u32(p, 0), nowS = Math.floor(Date.now() / 1000);
-      bleLog('Garmin ← current time request');
-      var q = []; w16(q, 5000); w16(q, 5052); q.push(0);
+      bleLog('Garmin ← ' + gLabel(tt));
+      var q = gResp(tt); q.push(0);
       w32(q, ref); w32(q, nowS - 631065600);            // Garmin's epoch is 1989-12-31
       w32(q, -new Date().getTimezoneOffset() * 60); w32(q, 0); w32(q, 0);
       gSend(q, 'current time');
@@ -3519,14 +3531,14 @@
       var pb = p.slice(14, 14 + plen), what = pbDescribe(pb, 0, PB_SMART);
       bleLog('Garmin ← ' + gLabel(tt) + ' id ' + rid + ': ' + (what === null ? 'undecoded' : what || '(empty)') +
         (off || total !== plen ? '  (part: ' + off + '+' + plen + ' of ' + total + ')' : '') + '  ' + hexA(pb));
-      if (!off && total === plen) { gAck(type); return; }   // complete: a plain OK, as Gadgetbridge does
+      if (!off && total === plen) { gAck(tt); return; }     // complete: a plain OK, as Gadgetbridge does
       // A piece of a longer one: Gadgetbridge's protobuf status, kept, no error.
-      var ps = []; w16(ps, 5000); w16(ps, type); ps.push(0); w16(ps, rid); w32(ps, off); ps.push(0, 0);
+      var ps = gResp(tt); ps.push(0); w16(ps, rid); w32(ps, off); ps.push(0, 0);
       gSend(ps, 'kept part of ' + gName(type) + ' id ' + rid);
       return;
     }
     bleLog('Garmin ← ' + gLabel(tt) + ' [' + p.length + ']  ' + hexA(p));
-    gAck(type);
+    gAck(tt);
   }
 
   // ---- Saved devices ---------------------------------------------------

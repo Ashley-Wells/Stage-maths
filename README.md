@@ -292,26 +292,39 @@ Codeberg and may know more (compact numbers, newer protobuf fields):
 1. close all, then register the main channel (GFDI, service 1);
 2. device information → OK, then Stage maths' own device information;
 3. configuration → OK, then its own capabilities back, trimmed to the 104
-   bits Gadgetbridge knows, then "ready to sync". Echoing all 128 also
-   claimed bit 114, and the C2 then switched to compact message numbers
-   (v38 capture), so v39 leaves the unknown bits out;
+   bits Gadgetbridge knows, then "ready to sync". (v39 dropped bit 114
+   suspecting it caused compact numbers; the C2 kept using them, so it
+   wasn't that);
 4. a current-time request → the time; an auth negotiation → accepted with
    its flags echoed; anything else → a plain OK so it never stalls. The
    device's own OKs are logged, never answered.
 
 **After the handshake** the real C2 (v38 capture) acknowledged our
 configuration and "ready to sync", then sent a **protobuf request**: Garmin's
-"Smart" message, core service, field 14, empty. Gadgetbridge's 2024
-definitions stop at core field 7, so what it asks for is unknown. It resent
-the request every few seconds after a plain OK to its compact number; v39
-answers with the full number (5043), which is how Gadgetbridge answers a
-complete protobuf request it has nothing to reply to. A request that arrives
-in pieces gets Gadgetbridge's "kept, no error" status per piece.
+"Smart" message, core service, field 14, empty. Current Gadgetbridge
+(Codeberg, `gdi_core.proto`) names that a **connection ready notification**:
+the device announcing it is ready, with no reply message. Gadgetbridge answers
+it with a plain OK and nothing else. v39 did the same, and the C2 still resent
+it every 5 seconds.
 
-**Compact message numbers**, as seen from the C2 and worked out from the
-payloads (not documented): top bit set, a 7-bit sequence number, then the
-low byte of type − 5000. `0x8132` = configuration #1, `0x832B` = protobuf
-request #3. The log names them, e.g. `protobuf request (#3)`.
+**Compact message numbers** (build v40). Gadgetbridge's protocol docs (GFDI
+section) describe them: the low byte is type − 5000, the high byte has its top
+bit set and a 5-bit sequence number. `0x832B` is a protobuf request (5043) #3.
+A response to one must be compact as well, or the device cannot match it:
+type bytes `00` and the request's own high byte, then the request's type in
+full and the status. So the OK to request #3 is `09 00 00 83 b3 13 00 4c 53`.
+v39 sent the full `88 13`, which is the likely reason for the resends; v40
+answers every compact request compactly and full ones in full. Gadgetbridge's
+code reads compact numbers but always replies in full.
+
+Leads on how shots arrive, none confirmed: the event-sharing service has an
+alert type `XERO_CHRONOGRAPH` (15) and the C2 claims the `EVENT_SHARING`
+capability (bit 81); Smart field 48 is a `XeroChronographService`, so far
+empty; Gadgetbridge knows file types `CHRONO_SHOT` (128/54, seen from a Xero
+C1 Pro), `CHRONO_ROUND` and `CHRONO_SCORECARD`, and the FIT SDK has
+`chrono_shot_session` / `chrono_shot_data` messages (since 21.133). Bit 114,
+which the C2 claims, is unnamed even in current Gadgetbridge, which leaves it
+out of its own capabilities.
 
 Adding a device with the Garmin service saves it as **Chrono**, and adding a
 device that is already saved under the same name and service, but a new

@@ -1,4 +1,4 @@
-var CACHE = 'stage-maths-v39';
+var CACHE = 'stage-maths-v40';
 var SHELL = [
   './',
   './index.html',

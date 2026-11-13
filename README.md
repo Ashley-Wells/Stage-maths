@@ -222,6 +222,40 @@ app can hold the connection, so disconnect PractiScore or nRF Connect first.
 Shots appear as they're fired, with split and running total. The raw hex log
 is still there underneath for working out a different timer.
 
+### Saved devices
+
+**Add device** opens Chrome's picker with everything nearby. Whatever you
+pick is saved, as a Timer, under its Bluetooth name and with the Service UUID
+in the field at the time. Each saved device has:
+
+- an editable **nickname**, handy when a partner's timer has the same name;
+- a **Timer / Chrono** switch. Only timers feed the shot parser; a chrono's
+  packets go to the hex log, for working out its format;
+- **Connect / Disconnect**, and **×** to forget it (Chrome's permission is
+  dropped too, where Chrome allows).
+
+A web page cannot scan for Bluetooth devices itself; Chrome's picker is the
+only list of what's nearby. What the app can do depends on the Chrome:
+
+- **Chrome remembers devices** (`getDevices`, flag-gated on some versions):
+  Connect goes straight in with no picker. On opening the app it tries the
+  **last-used timer** once. If the timer is off or out of range the chip
+  reads **Not found · retry**, and it does not keep trying, so it won't drain
+  the battery or grab a connection PractiScore needs. Saved devices that are
+  advertising show **in range**, where Chrome supports that.
+- **Chrome doesn't remember**: Chrome won't open its picker without a tap,
+  so nothing connects on its own. The chip reads **Tap to connect**, and a tap
+  opens the picker narrowed to that device's name. If Chrome hands back a new
+  device id, the saved entry follows it and keeps its nickname.
+
+A connection attempt gives up after 15 seconds. Connecting to one device
+disconnects the other, as only one is held at a time. A device that connects
+but lacks its service says so, rather than "not found".
+
+Saved devices live in `stage-maths:devices:v1`, in this browser only.
+Chrome's device ids mean nothing on another phone, so they are never in a
+backup or a share link.
+
 ### Using it from the Stage tab
 
 You don't need to leave the Stage tab while a squad shoots. Under **Time
@@ -234,8 +268,10 @@ called**:
   your real last shot and the time stops following. The next start beep
   releases that hold, so the following shooter auto-fills without re-arming.
   Typing a time by hand holds it the same way.
-- The chip shows whether a timer is connected, and beside it the shot count
-  and first shot time.
+- The chip shows the connection: **Timer on**, **Connecting…**, **Not found ·
+  retry** or **Tap to connect**. Tapping it connects the last-used timer, or
+  opens the Timer tab if none is saved. Beside it are the shot count and
+  first shot time.
 
 A live time lands in the form you were **last on** — Stage or Drills — not
 whichever tab happens to be showing. So you can arm Auto on Drills, flip to

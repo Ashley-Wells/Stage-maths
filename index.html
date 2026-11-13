@@ -255,9 +255,9 @@
   .st .sh { font-size: 19px; font-weight: 700; }
   .st.lead .sh { color: var(--accent); }
   .st .pc { font-size: 12px; color: var(--soft); }
-  .st .x, #chronoCard .x { flex: none; width: 32px; height: 32px; border-radius: 50%; font: inherit; font-size: 17px;
+  .st .x, #chronoCard .x, .dev .x { flex: none; width: 32px; height: 32px; border-radius: 50%; font: inherit; font-size: 17px;
     line-height: 1; cursor: pointer; background: transparent; color: var(--soft); border: none; }
-  .st .x:active, #chronoCard .x:active { color: var(--pen); }
+  .st .x:active, #chronoCard .x:active, .dev .x:active { color: var(--pen); }
   .st.editing { background: var(--accent-bg); border-radius: var(--r-sm); }
 
   .log {
@@ -295,6 +295,19 @@
   .pill { flex: none; margin-left: auto; font-size: 11.5px; font-weight: 600; padding: 4px 10px;
     border-radius: 999px; background: var(--raised); color: var(--soft); white-space: nowrap; }
   .pill.on { background: var(--accent-bg); color: var(--accent); }
+  button.pill { font-family: inherit; border: none; cursor: pointer; }
+  button.pill.warn { background: var(--raised); color: var(--pen); box-shadow: inset 0 0 0 1px var(--line); }
+  .dev { padding: 10px 0; border-top: 1px solid var(--line); }
+  .dev:first-child { border-top: none; padding-top: 2px; }
+  .dev .top { display: flex; align-items: center; gap: 8px; }
+  .dev .nick { flex: 1; min-width: 0; font: inherit; font-size: 16px; font-weight: 600; color: var(--ink);
+    padding: 7px 10px; min-height: 40px; background: var(--raised); border: 1px solid var(--line); border-radius: var(--r-sm); }
+  .dev .nick:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-bg); }
+  .dev .meta { font-size: 11.5px; color: var(--soft); margin: 5px 0 8px; overflow-wrap: anywhere; }
+  .dev .row2 { display: flex; align-items: center; gap: 8px; }
+  .dev .row2 .seg { flex: 1; margin: 0; }
+  .dev .conn { flex: none; }
+  .dev .conn.on { background: var(--accent); color: var(--bg); border-color: var(--accent); }
 
   @keyframes bump { 0% { transform: scale(1); } 40% { transform: scale(1.05); } 100% { transform: scale(1); } }
   .bump { animation: bump 260ms ease-out; }
@@ -367,7 +380,7 @@
         <button type="button" class="ghost step" id="shotBack" aria-label="Previous shot">&lsaquo;</button>
         <button type="button" class="ghost autob" id="shotAuto" aria-pressed="false">Auto</button>
         <button type="button" class="ghost step" id="shotFwd" aria-label="Next shot">&rsaquo;</button>
-        <span class="pill" id="tmrChip">No timer</span>
+        <button type="button" class="pill" id="tmrChip">No timer</button>
         <span class="tmrinfo" id="tmrInfo"></span>
       </div>
       <div class="field">
@@ -421,17 +434,18 @@
 
   <div id="viewTimer" hidden>
     <div class="card">
-      <p class="lead">Shot timer over Bluetooth</p>
+      <p class="lead">Bluetooth devices</p>
       <p class="hint" id="bleSupport"></p>
+      <div id="devList"></div>
+      <div class="actions">
+        <button type="button" id="bleConnect" class="primary">Add device</button>
+      </div>
+      <p class="hint" id="devNote" style="margin-top:10px"></p>
       <div class="field">
         <label for="svcUuid">Service UUID</label>
         <input type="text" id="svcUuid" placeholder="service uuid" autocomplete="off" spellcheck="false">
       </div>
-      <p class="hint">Defaults to the Nordic UART Service, which is what the AMG Commander uses. Only change it for a different timer.</p>
-      <div class="actions">
-        <button type="button" id="bleConnect" class="primary">Connect</button>
-        <button type="button" id="bleDisconnect" class="ghost" hidden>Disconnect</button>
-      </div>
+      <p class="hint">Used when you add a device. Defaults to the Nordic UART Service, which is what the AMG Commander uses. Each saved device keeps the one it was added with.</p>
     </div>
 
     <div class="card" id="chronoCard">
@@ -643,7 +657,7 @@
         <button type="button" class="ghost step" id="dShotBack" aria-label="Previous shot">&lsaquo;</button>
         <button type="button" class="ghost autob" id="dShotAuto" aria-pressed="false">Auto</button>
         <button type="button" class="ghost step" id="dShotFwd" aria-label="Next shot">&rsaquo;</button>
-        <span class="pill" id="dTmrChip">No timer</span>
+        <button type="button" class="pill" id="dTmrChip">No timer</button>
         <span class="tmrinfo" id="dTmrInfo"></span>
       </div>
 
@@ -695,7 +709,7 @@
 <script>
 (function () {
   var el = function (id) { return document.getElementById(id); };
-  var BUILD = 'v35';  // bump with CACHE in sw.js
+  var BUILD = 'v36';  // bump with CACHE in sw.js
   el('build').textContent = 'build ' + BUILD + ' \u00b7 tap to update';
 
   // An escape hatch. A stale service worker has sent us chasing bugs that were
@@ -2572,11 +2586,19 @@
     return BARS[0];
   }
 
+  function chipText() {
+    if (bleState === 'on') return 'Timer on';
+    if (bleState === 'connecting') return 'Connecting\u2026';
+    if (bleState === 'notfound') return 'Not found \u00b7 retry';
+    var rec = typeof lastTimer === 'function' && navigator.bluetooth ? lastTimer() : null;
+    return rec ? 'Tap to connect' : 'No timer';
+  }
+
   function renderTimerBar() {
     BARS.forEach(function (b) {
       var chip = el(b.chip), info = el(b.info);
-      chip.textContent = bleOn ? 'Timer on' : 'No timer';
-      chip.className = 'pill' + (bleOn ? ' on' : '');
+      chip.textContent = chipText();
+      chip.className = 'pill' + (bleOn ? ' on' : (bleState === 'notfound' ? ' warn' : ''));
       el(b.auto).setAttribute('aria-pressed', String(auto));
       el(b.back).disabled = shotIdx <= 0;
       el(b.fwd).disabled = shotIdx < 0 || shotIdx >= shots.length - 1;
@@ -3069,7 +3091,7 @@
     if (name === 'overall') renderOverall();
     if (name === 'log') renderLog();
     if (name === 'drills') renderDrills();
-    if (name === 'timer') renderChrono();
+    if (name === 'timer') { renderChrono(); renderDevices(); watchSaved(); }
     renderTimerBar();
   }
   TABS.forEach(function (t) {
@@ -3216,27 +3238,96 @@
 
   el('bleReset').addEventListener('click', clearShots);
 
-  el('bleConnect').addEventListener('click', function () {
-    var svc = parseUuid(el('svcUuid').value);
-    if (svc === null) { bleLog('Enter a service UUID first.'); return; }
+  // ---- Saved devices ---------------------------------------------------
+  // A page cannot scan for Bluetooth devices; only Chrome's own picker lists
+  // what is nearby. What it can do is keep its own list of devices you have
+  // picked before. Where Chrome exposes getDevices() - remembered permissions,
+  // flag-gated on some versions - a saved device reconnects with no picker.
+  // Elsewhere a saved device opens the picker narrowed to its name, so it is
+  // one tap to confirm. The list is local to this browser: Chrome's device
+  // ids mean nothing on another phone, so it is never in a backup or a link.
+  var DEV_KEY = 'stage-maths:devices:v1';
+  var devices = [];          // { id, name, nick, kind: 'timer'|'chrono', svc, added, last }
+  var bleRec = null;         // the saved record behind the live connection
+  var bleState = 'idle';     // idle | connecting | on | notfound
+  var inRange = {};          // id -> time an advertisement was last seen
+  var watching = {};         // id -> true once watchAdvertisements is running
+  var devRenderPending = false;
+  var CONNECT_TIMEOUT = 15000;
 
-    navigator.bluetooth.requestDevice({ acceptAllDevices: true, optionalServices: [svc] })
-      .then(function (d) {
-        bleDevice = d;
-        bleLog('Selected ' + (d.name || 'unnamed device'));
-        d.addEventListener('gattserverdisconnected', function () {
-          bleLog('Disconnected.');
-          el('bleDisconnect').hidden = true;
-          bleOn = false;
-          renderTimerBar();
-        });
-        return d.gatt.connect();
-      })
+  function canRemember() { return !!(navigator.bluetooth && navigator.bluetooth.getDevices); }
+
+  function cleanDev(r) {
+    if (!r || typeof r !== 'object' || typeof r.id !== 'string' || !r.id || r.id.length > 128) return null;
+    var str = function (v, n) { return typeof v === 'string' ? v.slice(0, n) : ''; };
+    var num = function (v) { return typeof v === 'number' && isFinite(v) && v > 0 ? v : 0; };
+    return { id: r.id, name: str(r.name, 64), nick: str(r.nick, 40),
+             kind: r.kind === 'chrono' ? 'chrono' : 'timer', svc: str(r.svc, 64) || NUS,
+             added: num(r.added), last: num(r.last) };
+  }
+
+  function loadDevices() {
+    devices = [];
+    try {
+      var raw = JSON.parse(localStorage.getItem(DEV_KEY) || '[]');
+      if (Array.isArray(raw)) raw.slice(0, 50).forEach(function (r) { var c = cleanDev(r); if (c) devices.push(c); });
+    } catch (e) { devices = []; }
+  }
+  function persistDevices() { try { localStorage.setItem(DEV_KEY, JSON.stringify(devices)); } catch (e) {} }
+  function devById(id) { for (var i = 0; i < devices.length; i++) if (devices[i].id === id) return devices[i]; return null; }
+  function devLabel(r) { return r.nick || r.name || 'Unnamed device'; }
+
+  // The timer the app reaches for on open and from the chip: the last one
+  // connected, else the most recently added.
+  function lastTimer() {
+    var best = null;
+    devices.forEach(function (r) {
+      if (r.kind !== 'timer') return;
+      if (!best || (r.last || 0) > (best.last || 0) ||
+          ((r.last || 0) === (best.last || 0) && r.added > best.added)) best = r;
+    });
+    return best;
+  }
+
+  function devNote(t) { el('devNote').textContent = t; }
+
+  function setBle(st) { bleState = st; bleOn = st === 'on'; renderTimerBar(); renderDevices(); }
+
+  function withTimeout(pr, ms) {
+    return new Promise(function (res, rej) {
+      var t = setTimeout(function () { rej(new Error('timeout')); }, ms);
+      pr.then(function (v) { clearTimeout(t); res(v); }, function (e) { clearTimeout(t); rej(e); });
+    });
+  }
+
+  // Everything after a device object is in hand: connect, find the service,
+  // subscribe. One path for a new device, a remembered one and a picked one.
+  function connectDevice(d, rec, quiet) {
+    if (bleDevice && bleDevice !== d && bleDevice.gatt && bleDevice.gatt.connected) {
+      try { bleDevice.gatt.disconnect(); } catch (e) {}
+    }
+    bleDevice = d;
+    bleRec = rec;
+    var svc = parseUuid(rec.svc) || NUS;
+    if (!d._smListen) {
+      d._smListen = true;
+      d.addEventListener('gattserverdisconnected', function () {
+        if (bleDevice !== d) return;           // an old device dropping after a switch
+        bleLog('Disconnected.');
+        writeChar = null;
+        if (bleState !== 'notfound' && bleState !== 'failing') setBle('idle');
+      });
+    }
+    setBle('connecting');
+    bleLog('Connecting to ' + devLabel(rec));
+    return withTimeout(d.gatt.connect(), CONNECT_TIMEOUT)
       .then(function (server) {
         bleLog('Connected. Reading services.');
-        el('bleDisconnect').hidden = false;
-        bleOn = true;
-        renderTimerBar();
+        rec.last = Date.now();
+        if (d.name && !rec.name) rec.name = d.name.slice(0, 64);
+        persistDevices();
+        setBle('on');
+        devNote('');
         return server.getPrimaryService(svc);
       })
       .then(function (service) { return service.getCharacteristics(); })
@@ -3267,7 +3358,10 @@
             c.addEventListener('characteristicvaluechanged', function (ev) {
               var dv = ev.target.value;
               bleLog(short + '  [' + dv.byteLength + ']  ' + hex(dv) + '\n        "' + ascii(dv) + '"');
-              onShotPacket(dv);
+              // A chronograph's packets are logged for working out its format,
+              // never fed to the AMG shot parser. Checked per packet, so
+              // switching a live device to Chrono takes effect at once.
+              if (rec.kind === 'timer') onShotPacket(dv);
             });
             return c.startNotifications()
               .then(function () { bleLog('Listening on ' + short); })
@@ -3278,19 +3372,218 @@
         return Promise.all(jobs);
       })
       .then(function () {
-        bleLog('Ready. Run the timer.');
-        el('bleShotsCard').hidden = false;
-        renderShots();
+        bleLog('Ready.' + (rec.kind === 'timer' ? ' Run the timer.' : ''));
+        if (rec.kind === 'timer') { el('bleShotsCard').hidden = false; renderShots(); }
+      })
+      .catch(function (err) {
+        var timedOut = err && err.message === 'timeout';
+        var reached = bleOn;          // connected, then the service step failed
+        bleLog('Error: ' + (timedOut ? 'no answer from ' + devLabel(rec) : err.message));
+        if (bleDevice !== d) return;
+        bleState = 'failing';         // keep the disconnect event from overwriting the state below
+        try { if (d.gatt.connected || timedOut) d.gatt.disconnect(); } catch (e) {}
+        if (reached) {
+          setBle('idle');
+          devNote('Connected to ' + devLabel(rec) + ', but it has no service ' + rec.svc +
+            '. Forget it and add it again with the right Service UUID.');
+        } else {
+          setBle('notfound');
+          if (!quiet) devNote(devLabel(rec) + ' did not answer. Check it is switched on and close, then try again.');
+        }
+      });
+  }
+
+  // Find the device object Chrome remembers for a saved record, if it will.
+  function remembered(rec) {
+    if (!canRemember()) return Promise.resolve(null);
+    return navigator.bluetooth.getDevices()
+      .then(function (list) {
+        for (var i = 0; i < list.length; i++) if (list[i].id === rec.id) return list[i];
+        return null;
+      })
+      .catch(function () { return null; });
+  }
+
+  // From a tap: straight in where Chrome remembers the device, otherwise its
+  // picker narrowed to this device's name.
+  function connectSaved(rec) {
+    if (!navigator.bluetooth) return;
+    devNote('');
+    var svc = parseUuid(rec.svc) || NUS;
+    remembered(rec).then(function (d) {
+      if (d) return connectDevice(d, rec);
+      var opts = rec.name ? { filters: [{ name: rec.name }], optionalServices: [svc] }
+                          : { acceptAllDevices: true, optionalServices: [svc] };
+      return navigator.bluetooth.requestDevice(opts).then(function (d2) {
+        // Chrome may hand back a new id for the same device; follow it.
+        if (d2.id !== rec.id) {
+          var dup = devById(d2.id);
+          if (dup && dup !== rec) devices = devices.filter(function (x) { return x !== dup; });
+          rec.id = d2.id;
+          persistDevices();
+        }
+        return connectDevice(d2, rec);
+      });
+    }).catch(function (err) {
+      bleLog('Error: ' + err.message);
+      if (bleState === 'connecting') setBle('idle');
+    });
+  }
+
+  // On app open: one quiet try at the last timer, and only where Chrome can
+  // reconnect without a tap. A switched-off timer shows "Not found" once;
+  // nothing keeps retrying in the background.
+  function autoConnect() {
+    var rec = lastTimer();
+    if (!rec || !canRemember()) return;
+    remembered(rec).then(function (d) {
+      if (!d) { setBle('idle'); return; }
+      if (bleState !== 'idle') return;    // the user beat us to it
+      connectDevice(d, rec, true);
+    });
+  }
+
+  function disconnectBle() {
+    var d = bleDevice;
+    bleState = 'idle';
+    if (d && d.gatt && d.gatt.connected) d.gatt.disconnect();
+    writeChar = null;
+    setBle('idle');
+  }
+
+  function forgetDevice(rec) {
+    if (!confirm('Forget ' + devLabel(rec) + '? You can add it again any time.')) return;
+    if (bleRec === rec) disconnectBle();
+    remembered(rec).then(function (d) {
+      if (d && d.forget) return d.forget().catch(function () {});
+    });
+    devices = devices.filter(function (x) { return x !== rec; });
+    delete inRange[rec.id];
+    persistDevices();
+    renderDevices();
+    renderTimerBar();
+  }
+
+  // "In range" needs watchAdvertisements, which is flag-gated in places; with
+  // no support the marker simply never appears.
+  function watchSaved() {
+    if (!canRemember()) return;
+    navigator.bluetooth.getDevices().then(function (list) {
+      list.forEach(function (d) {
+        if (!devById(d.id) || watching[d.id] || !d.watchAdvertisements) return;
+        watching[d.id] = true;
+        d.addEventListener('advertisementreceived', function () {
+          var was = inRange[d.id];
+          inRange[d.id] = Date.now();
+          if (!was) renderDevices();
+        });
+        d.watchAdvertisements().catch(function () { watching[d.id] = false; });
+      });
+    }).catch(function () {});
+  }
+  function isNear(id) { return inRange[id] && Date.now() - inRange[id] < 60000; }
+
+  function renderDevices() {
+    var box = el('devList');
+    var a = document.activeElement;
+    // Never rebuild under a nickname being typed; catch up on blur.
+    if (a && a.classList && a.classList.contains('nick') && box.contains(a)) { devRenderPending = true; return; }
+    devRenderPending = false;
+    box.innerHTML = '';
+    if (!devices.length) {
+      box.innerHTML = '<div class="empty">No saved devices yet. <b>Add device</b> opens Chrome’s list of everything nearby.</div>';
+      return;
+    }
+    var order = devices.slice().sort(function (x, y) {
+      if (x.kind !== y.kind) return x.kind === 'timer' ? -1 : 1;
+      return (y.last || y.added) - (x.last || x.added);
+    });
+    order.forEach(function (r) {
+      var live = bleRec === r && (bleState === 'on' || bleState === 'connecting');
+      var row = document.createElement('div');
+      row.className = 'dev';
+      row.innerHTML =
+        '<div class="top"><input class="nick" type="text" maxlength="40" autocomplete="off" spellcheck="false" aria-label="Nickname">' +
+        '<span class="fa near" hidden>in range</span></div>' +
+        '<div class="meta"></div>' +
+        '<div class="row2"><div class="seg sm" role="group" aria-label="Device type">' +
+        '<button type="button" data-k="timer">Timer</button><button type="button" data-k="chrono">Chrono</button></div>' +
+        '<button type="button" class="ghost conn"></button>' +
+        '<button type="button" class="x" aria-label="Forget device">&times;</button></div>';
+      var nick = row.querySelector('.nick');
+      nick.value = r.nick || r.name || '';
+      nick.placeholder = r.name || 'Unnamed device';
+      nick.addEventListener('input', function () {
+        r.nick = nick.value.trim().slice(0, 40);
+        persistDevices();
+      });
+      nick.addEventListener('blur', function () {
+        if (!r.nick) nick.value = r.name || '';
+        if (devRenderPending) setTimeout(renderDevices, 0);
+        renderTimerBar();
+      });
+      nick.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') nick.blur(); });
+      row.querySelector('.near').hidden = !isNear(r.id);
+      var bits = [r.name || 'no Bluetooth name'];
+      bits.push(r.svc === NUS ? 'UART service' : 'service ' + r.svc);
+      bits.push(r.last ? 'last connected ' + fmtDate(new Date(r.last)) : 'never connected');
+      row.querySelector('.meta').textContent = bits.join('  ·  ');
+      row.querySelectorAll('.seg button').forEach(function (b) {
+        b.setAttribute('aria-pressed', String(b.getAttribute('data-k') === r.kind));
+        b.addEventListener('click', function () {
+          r.kind = b.getAttribute('data-k');
+          persistDevices();
+          renderDevices();
+          renderTimerBar();
+        });
+      });
+      var conn = row.querySelector('.conn');
+      conn.textContent = live ? (bleState === 'connecting' ? 'Connecting…' : 'Disconnect') : 'Connect';
+      conn.className = 'ghost conn' + (live && bleState === 'on' ? ' on' : '');
+      conn.disabled = !navigator.bluetooth;
+      conn.addEventListener('click', function () {
+        if (live) disconnectBle(); else connectSaved(r);
+      });
+      row.querySelector('.x').addEventListener('click', function () { forgetDevice(r); });
+      box.appendChild(row);
+    });
+  }
+
+  // Add device: Chrome's full picker, everything nearby. The pick is saved
+  // as a timer under its Bluetooth name with the service in the field.
+  el('bleConnect').addEventListener('click', function () {
+    var svc = parseUuid(el('svcUuid').value);
+    if (svc === null) { bleLog('Enter a service UUID first.'); devNote('Enter a service UUID first.'); return; }
+    devNote('');
+    navigator.bluetooth.requestDevice({ acceptAllDevices: true, optionalServices: [svc] })
+      .then(function (d) {
+        bleLog('Selected ' + (d.name || 'unnamed device'));
+        var rec = devById(d.id);
+        if (!rec) {
+          rec = { id: d.id, name: (d.name || '').slice(0, 64), nick: '', kind: 'timer',
+                  svc: el('svcUuid').value.trim().toLowerCase() || NUS, added: Date.now(), last: 0 };
+          devices.push(rec);
+          persistDevices();
+        } else {
+          rec.svc = el('svcUuid').value.trim().toLowerCase() || rec.svc;
+          persistDevices();
+        }
+        renderDevices();
+        watchSaved();
+        return connectDevice(d, rec);
       })
       .catch(function (err) { bleLog('Error: ' + err.message); });
   });
 
-  el('bleDisconnect').addEventListener('click', function () {
-    if (bleDevice && bleDevice.gatt.connected) bleDevice.gatt.disconnect();
-    el('bleDisconnect').hidden = true;
-    bleOn = false;
-    renderTimerBar();
-  });
+  // The timer chip on the Stage and Drills forms: connect the last timer,
+  // retry after "not found", or send you to the Timer tab to add one.
+  function chipTap() {
+    if (bleState === 'on' || bleState === 'connecting') { setTab('timer'); return; }
+    var rec = lastTimer();
+    if (rec && navigator.bluetooth) connectSaved(rec); else setTab('timer');
+  }
+  el('tmrChip').addEventListener('click', chipTap);
+  el('dTmrChip').addEventListener('click', chipTap);
 
   el('bleClear').addEventListener('click', function () { el('bleLog').textContent = ''; });
 
@@ -3384,12 +3677,15 @@
   loadRoster();
   loadDrills();
   loadChrono();
+  loadDevices();
   migrateRoster();
   el('bMinor').setAttribute('aria-pressed', String(!state.major));
   el('bMajor').setAttribute('aria-pressed', String(state.major));
   syncStageFields();
   paintPad();
   renderTimerBar();
+  renderDevices();
+  autoConnect();
   update();
   tryImport();
   // A share link tapped while the app is already open only changes the hash,

@@ -710,7 +710,7 @@
 <script>
 (function () {
   var el = function (id) { return document.getElementById(id); };
-  var BUILD = 'v41';  // bump with CACHE in sw.js
+  var BUILD = 'v42';  // bump with CACHE in sw.js
   el('build').textContent = 'build ' + BUILD + ' \u00b7 tap to update';
 
   // An escape hatch. A stale service worker has sent us chasing bugs that were
@@ -3290,21 +3290,48 @@
   function gLabel(t) { return gName(t.type) + (t.seq >= 0 ? ' (#' + t.seq + ')' : ''); }
 
   // Protobuf, decoded just far enough to name what is asked for. The top
-  // level is Gadgetbridge's "Smart" message; core service fields are named
-  // from its 2024 definitions; anything else is shown by field number.
-  var PB_SMART = { 1: 'calendar service', 2: 'http service', 7: 'data transfer service',
-    8: 'device status service', 12: 'find my watch service', 13: 'core service',
-    16: 'sms notification service', 30: 'event sharing service', 42: 'settings service',
-    48: 'Xero chronograph service', 49: 'notifications service' };
-  var PB_CORE = { 1: 'sync request', 2: 'sync response', 3: 'get location request',
+  // level is Gadgetbridge's "Smart" message; the core and event sharing
+  // services are named from Gadgetbridge's current definitions (Codeberg);
+  // anything else is shown by field number. A schema is { n: field names,
+  // sub: schemas of nested messages, en: names of enum values }.
+  var PB_ALERTS = ['activity start', 'activity stop', 'activity distance', 'activity time',
+    'activity auto lap', 'activity manual lap', 'activity transition', 'switcher status change',
+    'launch monitor', 'navigation update', 'break planner state change', 'driving state change',
+    'bluetooth classic state change', 'golf state change', 'rangefinder measurement',
+    'Xero chronograph', 'golf club status change', 'dive readiness change', 'radar settings change',
+    'live session', 'heart rate measurement', 'running measurement',
+    'accessory utilities activity state', 'running algorithm input', 'bike power measurement',
+    'development testing', 'psa sample', 'varia device status', 'button event',
+    'cycling torso sensor measurement', 'xcel strength', 'controlling device status change',
+    'xcel sprint', 'Xero rangefinder', 'xcel sprint sensor state'];
+  var PB_ALERT_MSG = { n: { 1: 'type', 2: 'interval' }, en: { 1: PB_ALERTS } };
+  var PB_EVENTS = {
+    n: { 1: 'subscribe request', 2: 'subscribe response', 3: 'alert notification',
+         4: 'support request', 5: 'support response' },
+    sub: {
+      1: { n: { 1: 'alert', 2: 'target distance' }, sub: { 1: PB_ALERT_MSG } },
+      2: { n: { 1: 'alert status' }, sub: { 1: { n: { 1: 'status', 2: 'alert' },
+           en: { 1: ['success', 'fail'] }, sub: { 2: PB_ALERT_MSG } } } },
+      3: { n: { 1: 'alert type', 2: 'activity details', 1001: 'launch monitor' }, en: { 1: PB_ALERTS } },
+      5: { n: { 1: 'supported alert', 2: 'version' }, en: { 1: PB_ALERTS } }
+    }
+  };
+  var PB_CORE = { n: { 1: 'sync request', 2: 'sync response', 3: 'get location request',
     4: 'get location response', 5: 'location updates request', 6: 'location updates response',
     7: 'location updated', 8: 'feature capabilities request', 9: 'feature capabilities response',
     10: 'guid overwrite request', 11: 'guid overwrite response', 12: 'dual pairing request',
     13: 'dual pairing response', 14: 'connection ready notification',
     15: 'check pending software request', 16: 'check pending software response',
-    17: 'time sync request', 18: 'time sync response' };
-  function pbDescribe(b, depth, names) {
+    17: 'time sync request', 18: 'time sync response' } };
+  var PB_SMART = { n: { 1: 'calendar service', 2: 'http service', 7: 'data transfer service',
+    8: 'device status service', 12: 'find my watch service', 13: 'core service',
+    16: 'sms notification service', 30: 'event sharing service', 42: 'settings service',
+    48: 'Xero chronograph service', 49: 'notifications service' },
+    sub: { 13: PB_CORE, 30: PB_EVENTS } };
+  function pbDescribe(b, depth, sch) { var r = pbParts(b, depth, sch); return r && r.join(', '); }
+  function pbParts(b, depth, sch) {
     var out = [], i = 0;
+    var names = (sch && sch.n) || {}, subs = (sch && sch.sub) || {}, ens = (sch && sch.en) || {};
     var varint = function () {
       var v = 0, m = 1, x;
       do { if (i >= b.length) throw new Error('short'); x = b[i++]; v += (x & 127) * m; m *= 128; } while (x & 128);
@@ -3313,23 +3340,27 @@
     try {
       while (i < b.length) {
         var key = varint(), f = Math.floor(key / 8), wt = key & 7;
-        var nm = (names && names[f]) || 'field ' + f;
-        if (wt === 0) out.push(nm + ' = ' + varint());
-        else if (wt === 2) {
+        var nm = names[f] || 'field ' + f;
+        if (wt === 0) {
+          var v = varint(), en = ens[f];
+          out.push(nm + ' = ' + (en && en[v] !== undefined ? en[v] + ' (' + v + ')' : v));
+        } else if (wt === 2) {
           var n = varint();
           if (i + n > b.length) return null;
           var sub = b.slice(i, i + n); i += n;
           if (n === 0) out.push(nm + ' (empty)');
           else {
-            var inner = depth < 4 ? pbDescribe(sub, depth + 1, names === PB_SMART && f === 13 ? PB_CORE : null) : null;
-            out.push(inner ? nm + ' › ' + inner : nm + ' [' + n + ' bytes]');
+            var parts = depth < 6 ? pbParts(sub, depth + 1, subs[f] || null) : null;
+            var inner = parts && (parts.length > 1 ? '(' + parts.join(', ') + ')' : parts[0]);
+            out.push(inner ? nm + ' › ' + inner : nm + ' [' + n + ' bytes: ' + hexA(sub) + ']');
           }
-        } else if (wt === 1) { i += 8; out.push(nm + ' (64-bit)'); }
-        else if (wt === 5) { i += 4; out.push(nm + ' (32-bit)'); }
+        } else if (wt === 1) { i += 8; out.push(nm + ' (64-bit ' + hexA(b.slice(i - 8, i)) + ')'); }
+        else if (wt === 5) { i += 4; out.push(nm + ' (32-bit ' + hexA(b.slice(i - 4, i)) + ')'); }
         else return null;
+        if (i > b.length) return null;
       }
     } catch (e) { return null; }
-    return out.join(', ');
+    return out;
   }
 
   var CRC_T = [0x0000, 0xCC01, 0xD801, 0x1400, 0xF001, 0x3C00, 0x2800, 0xE401,
@@ -3416,13 +3447,21 @@
     var b = gResp(tt); b.push(0);
     gSend(b, 'OK to ' + gLabel(tt));
   }
+  // A protobuf request of our own (5043, full number, as Gadgetbridge
+  // sends), with our own request ids counting from 1.
+  function gPbRequest(pb, what) {
+    var id = G.pbId = (G.pbId % 65535) + 1;
+    var b = []; w16(b, 5043); w16(b, id); w32(b, 0); w32(b, pb.length); w32(b, pb.length);
+    pb.forEach(function (x) { b.push(x); });
+    gSend(b, 'protobuf request id ' + id + ': ' + what + '  ' + hexA(pb));
+  }
 
   function garminStart(chars, rec) {
     var find = function (n) { return chars.filter(function (c) { return c.uuid === '6a4e' + n + '-667b-11e3-949a-0800200c9a66'; })[0]; };
     var rx = find('2810'), tx = find('2820');
     if (!rx || !tx) { bleLog('Garmin: 2810/2820 not found, handshake skipped.'); return; }
     G = { rx: rx, tx: tx, rec: rec, handle: 0, buf: [], at: 0, q: Promise.resolve(), ready: false,
-          pbSeen: {}, pbEchoed: {} };
+          pbSeen: {}, pbEchoed: {}, pbId: 0, asked: false };
     bleLog('Garmin: starting handshake');
     gWrite(gMgmt(5, []));                          // close all
   }
@@ -3469,8 +3508,12 @@
     var tt = gType(u16(m, 2)), type = tt.type, p = m.slice(4, n - 2), rec = G.rec;
 
     if (type === 5000) {
-      bleLog('Garmin ← ' + (p[2] === 0 ? 'OK' : 'status ' + p[2]) + ' to ' + gLabel(gType(u16(p, 0))) +
-        (p.length > 3 ? '  ' + hexA(p.slice(3)) : ''));
+      var ot = gType(u16(p, 0)), extra = p.length > 3 ? '  ' + hexA(p.slice(3)) : '';
+      // The protobuf form: request id, offset, kept (0) or discarded (1), error code.
+      if ((ot.type === 5043 || ot.type === 5044) && p.length >= 11)
+        extra = ' id ' + u16(p, 3) + (p[9] === 0 ? ', kept' : p[9] === 1 ? ', discarded' : ', chunk status ' + p[9]) +
+          (p[10] === 0 ? ', no error' : ', error ' + p[10]) + (u32(p, 5) ? ', offset ' + u32(p, 5) : '');
+      bleLog('Garmin ← ' + (p[2] === 0 ? 'OK' : 'status ' + p[2]) + ' to ' + gLabel(ot) + extra);
       return;
     }
     if (type === 5024) {
@@ -3552,6 +3595,15 @@
           gSend(rs, 'protobuf response id ' + rid + ', echoing it (it repeated): ' + (what || hexA(pb)));
         }
         G.pbSeen[key] = true;
+        // Once it has said "connection ready" (core service field 14), ask
+        // which event alerts it supports and subscribe to the Xero
+        // chronograph alert (15). Once per connection.
+        if (!G.asked && hexA(pb) === '6a 02 72 00') {
+          G.asked = true;
+          gPbRequest([0xF2, 0x01, 0x02, 0x22, 0x00], 'event sharing › support request');
+          gPbRequest([0xF2, 0x01, 0x06, 0x0A, 0x04, 0x0A, 0x02, 0x08, 0x0F],
+            'event sharing › subscribe request › alert › type = Xero chronograph (15)');
+        }
       }
       return;
     }

@@ -326,6 +326,16 @@ kept and no error. For request #3, id 2: `11 00 00 83 b3 13 00 02 00 00 00 00
 once per connection, a protobuf response (5044) on the same id that echoes its
 content back (`6a 02 72 00`). The log shows which of the two stopped it.
 
+**v41 on the real C2:** the protobuf-form OK stopped the resends (no echo
+needed); the handshake is now clean. **v42** then asks, once per connection,
+over the event sharing service (Smart field 30): a support request
+(`f2 01 02 22 00`, "which alerts do you send?") and a subscribe request for
+alert type 15, Xero chronograph (`f2 01 06 0a 04 0a 02 08 0f`). Both go as
+protobuf requests (5043) with our own ids from 1. The log decodes event
+sharing in words (support and subscribe responses, alert notifications, alert
+types by name); a Xero alert's details are an undocumented extension, shown by
+field number with its bytes.
+
 Leads on how shots arrive, none confirmed: the event-sharing service has an
 alert type `XERO_CHRONOGRAPH` (15) and the C2 claims the `EVENT_SHARING`
 capability (bit 81); Smart field 48 is a `XeroChronographService`, so far

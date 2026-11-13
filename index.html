@@ -710,7 +710,7 @@
 <script>
 (function () {
   var el = function (id) { return document.getElementById(id); };
-  var BUILD = 'v38';  // bump with CACHE in sw.js
+  var BUILD = 'v39';  // bump with CACHE in sw.js
   el('build').textContent = 'build ' + BUILD + ' \u00b7 tap to update';
 
   // An escape hatch. A stale service worker has sent us chasing bugs that were
@@ -3270,6 +3270,56 @@
     5050: 'configuration', 5052: 'current time request', 5101: 'auth negotiation' };
   function gName(t) { return G_NAMES[t] || 'message ' + t; }
 
+  // Compact message numbers. The C2 switched to these after we echoed a
+  // capability bit (114) beyond the 104 Gadgetbridge knows: top bit set,
+  // then a 7-bit sequence number, then the low byte of (type - 5000). So
+  // 0x8132 is configuration (5050) #1 and 0x832B a protobuf request (5043)
+  // #3 - worked out from the payloads, not documented. Classic numbers
+  // pass through unchanged.
+  function gType(raw) {
+    if (raw & 0x8000) return { type: (raw & 0xFF) + 5000, seq: (raw >> 8) & 0x7F };
+    return { type: raw, seq: -1 };
+  }
+  function gLabel(t) { return gName(t.type) + (t.seq >= 0 ? ' (#' + t.seq + ')' : ''); }
+
+  // Protobuf, decoded just far enough to name what is asked for. The top
+  // level is Gadgetbridge's "Smart" message; core service fields are named
+  // from its 2024 definitions; anything else is shown by field number.
+  var PB_SMART = { 1: 'calendar service', 2: 'http service', 7: 'data transfer service',
+    8: 'device status service', 12: 'find my watch service', 13: 'core service',
+    16: 'sms notification service', 42: 'settings service', 49: 'notifications service' };
+  var PB_CORE = { 1: 'sync request', 2: 'sync response', 3: 'get location request',
+    4: 'get location response', 5: 'location updates request', 6: 'location updates response',
+    7: 'location updated' };
+  function pbDescribe(b, depth, names) {
+    var out = [], i = 0;
+    var varint = function () {
+      var v = 0, m = 1, x;
+      do { if (i >= b.length) throw new Error('short'); x = b[i++]; v += (x & 127) * m; m *= 128; } while (x & 128);
+      return v;
+    };
+    try {
+      while (i < b.length) {
+        var key = varint(), f = Math.floor(key / 8), wt = key & 7;
+        var nm = (names && names[f]) || 'field ' + f;
+        if (wt === 0) out.push(nm + ' = ' + varint());
+        else if (wt === 2) {
+          var n = varint();
+          if (i + n > b.length) return null;
+          var sub = b.slice(i, i + n); i += n;
+          if (n === 0) out.push(nm + ' (empty)');
+          else {
+            var inner = depth < 4 ? pbDescribe(sub, depth + 1, names === PB_SMART && f === 13 ? PB_CORE : null) : null;
+            out.push(inner ? nm + ' › ' + inner : nm + ' [' + n + ' bytes]');
+          }
+        } else if (wt === 1) { i += 8; out.push(nm + ' (64-bit)'); }
+        else if (wt === 5) { i += 4; out.push(nm + ' (32-bit)'); }
+        else return null;
+      }
+    } catch (e) { return null; }
+    return out.join(', ');
+  }
+
   var CRC_T = [0x0000, 0xCC01, 0xD801, 0x1400, 0xF001, 0x3C00, 0x2800, 0xE401,
                0xA001, 0x6C00, 0x7800, 0xB401, 0x5000, 0x9C01, 0x8801, 0x4400];
   function gCrc(b, n) {
@@ -3403,10 +3453,10 @@
     if (m.length < 6 || u16(m, 0) !== m.length) { bleLog('Garmin ← bad length: ' + hexA(m)); return; }
     var n = m.length;
     if (u16(m, n - 2) !== gCrc(m, n - 2)) { bleLog('Garmin ← bad checksum: ' + hexA(m)); return; }
-    var type = u16(m, 2), p = m.slice(4, n - 2), rec = G.rec;
+    var tt = gType(u16(m, 2)), type = tt.type, p = m.slice(4, n - 2), rec = G.rec;
 
     if (type === 5000) {
-      bleLog('Garmin ← ' + (p[2] === 0 ? 'OK' : 'status ' + p[2]) + ' to ' + gName(u16(p, 0)) +
+      bleLog('Garmin ← ' + (p[2] === 0 ? 'OK' : 'status ' + p[2]) + ' to ' + gLabel(gType(u16(p, 0))) +
         (p.length > 3 ? '  ' + hexA(p.slice(3)) : ''));
       return;
     }
@@ -3430,15 +3480,22 @@
     }
     if (type === 5050) {
       var cn = p[0], caps = p.slice(1, 1 + cn);
-      bleLog('Garmin ← configuration: ' + cn + ' bytes of capabilities  ' + hexA(caps));
+      bleLog('Garmin ← ' + gLabel(tt) + ': ' + cn + ' bytes of capabilities  ' + hexA(caps));
       gAck(5050);
-      var c = []; w16(c, 5050); c.push(cn); caps.forEach(function (x) { c.push(x); });
-      gSend(c, 'configuration (its own capabilities, echoed)');
-      var ev = []; w16(ev, 5030); ev.push(8, 0);
-      gSend(ev, 'ready to sync');
-      G.ready = true;
-      bleLog('Garmin: handshake complete. Fire a shot and copy this log.');
-      renderDevices();
+      // Its own capabilities back, trimmed to the 104 bits (13 bytes)
+      // Gadgetbridge knows. Echoing them whole claimed bit 114 as well, and
+      // the C2 then switched to compact message numbers.
+      var mine = [];
+      for (var ci = 0; ci < 13; ci++) mine.push(caps[ci] || 0);
+      var c = []; w16(c, 5050); c.push(13); mine.forEach(function (x) { c.push(x); });
+      gSend(c, 'configuration (its capabilities, within the 104 bits Gadgetbridge knows)');
+      if (!G.ready) {
+        var ev = []; w16(ev, 5030); ev.push(8, 0);
+        gSend(ev, 'ready to sync');
+        G.ready = true;
+        bleLog('Garmin: handshake complete. Fire a shot and copy this log.');
+        renderDevices();
+      }
       return;
     }
     if (type === 5101) {
@@ -3457,7 +3514,18 @@
       gSend(q, 'current time');
       return;
     }
-    bleLog('Garmin ← ' + gName(type) + ' [' + p.length + ']  ' + hexA(p));
+    if ((type === 5043 || type === 5044) && p.length >= 14) {
+      var rid = u16(p, 0), off = u32(p, 2), total = u32(p, 6), plen = u32(p, 10);
+      var pb = p.slice(14, 14 + plen), what = pbDescribe(pb, 0, PB_SMART);
+      bleLog('Garmin ← ' + gLabel(tt) + ' id ' + rid + ': ' + (what === null ? 'undecoded' : what || '(empty)') +
+        (off || total !== plen ? '  (part: ' + off + '+' + plen + ' of ' + total + ')' : '') + '  ' + hexA(pb));
+      if (!off && total === plen) { gAck(type); return; }   // complete: a plain OK, as Gadgetbridge does
+      // A piece of a longer one: Gadgetbridge's protobuf status, kept, no error.
+      var ps = []; w16(ps, 5000); w16(ps, type); ps.push(0); w16(ps, rid); w32(ps, off); ps.push(0, 0);
+      gSend(ps, 'kept part of ' + gName(type) + ' id ' + rid);
+      return;
+    }
+    bleLog('Garmin ← ' + gLabel(tt) + ' [' + p.length + ']  ' + hexA(p));
     gAck(type);
   }
 
@@ -3838,10 +3906,19 @@
     navigator.bluetooth.requestDevice({ acceptAllDevices: true, optionalServices: [svc] })
       .then(function (d) {
         bleLog('Selected ' + (d.name || 'unnamed device'));
+        var svcStr = el('svcUuid').value.trim().toLowerCase() || NUS;
         var rec = devById(d.id);
+        if (!rec && d.name) {
+          // The same device under a new Chrome id (after a forget, or on a
+          // Chrome without remembered permissions): follow it rather than
+          // add a twin with the default type.
+          rec = devices.filter(function (x) { return x.name === d.name && x.svc === svcStr; })[0] || null;
+          if (rec) { rec.id = d.id; persistDevices(); }
+        }
         if (!rec) {
-          rec = { id: d.id, name: (d.name || '').slice(0, 64), nick: '', kind: 'timer',
-                  svc: el('svcUuid').value.trim().toLowerCase() || NUS, added: Date.now(), last: 0 };
+          rec = { id: d.id, name: (d.name || '').slice(0, 64), nick: '',
+                  kind: svcStr === GARMIN_SVC ? 'chrono' : 'timer',   // Garmin's service is never a shot timer
+                  svc: svcStr, added: Date.now(), last: 0 };
           devices.push(rec);
           persistDevices();
         } else {

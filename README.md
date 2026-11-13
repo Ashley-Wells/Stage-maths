@@ -285,15 +285,37 @@ What's known so far, from nRF Connect and the Timer tab:
 
 **The handshake (build v38).** A device saved as **Chrono** with this
 service runs it automatically after connecting, following Gadgetbridge
-(`CommunicatorV2` and its GFDI message classes):
+(`CommunicatorV2` and its GFDI message classes). The source read was
+Gadgetbridge's GitHub mirror as of December 2024; current development is on
+Codeberg and may know more (compact numbers, newer protobuf fields):
 
 1. close all, then register the main channel (GFDI, service 1);
 2. device information → OK, then Stage maths' own device information;
-3. configuration → OK, then its own capabilities echoed back (so Stage
-   maths claims nothing the C2 doesn't have), then "ready to sync";
+3. configuration → OK, then its own capabilities back, trimmed to the 104
+   bits Gadgetbridge knows, then "ready to sync". Echoing all 128 also
+   claimed bit 114, and the C2 then switched to compact message numbers
+   (v38 capture), so v39 leaves the unknown bits out;
 4. a current-time request → the time; an auth negotiation → accepted with
    its flags echoed; anything else → a plain OK so it never stalls. The
    device's own OKs are logged, never answered.
+
+**After the handshake** the real C2 (v38 capture) acknowledged our
+configuration and "ready to sync", then sent a **protobuf request**: Garmin's
+"Smart" message, core service, field 14, empty. Gadgetbridge's 2024
+definitions stop at core field 7, so what it asks for is unknown. It resent
+the request every few seconds after a plain OK to its compact number; v39
+answers with the full number (5043), which is how Gadgetbridge answers a
+complete protobuf request it has nothing to reply to. A request that arrives
+in pieces gets Gadgetbridge's "kept, no error" status per piece.
+
+**Compact message numbers**, as seen from the C2 and worked out from the
+payloads (not documented): top bit set, a 7-bit sequence number, then the
+low byte of type − 5000. `0x8132` = configuration #1, `0x832B` = protobuf
+request #3. The log names them, e.g. `protobuf request (#3)`.
+
+Adding a device with the Garmin service saves it as **Chrono**, and adding a
+device that is already saved under the same name and service, but a new
+Chrome id, updates that entry instead of creating a twin.
 
 Every message is logged decoded (`Garmin ← device information: …`,
 `Garmin → OK to …`), and unknown ones with their bytes. The row shows the

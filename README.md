@@ -275,9 +275,37 @@ What's known so far, from nRF Connect and the Timer tab:
   protocol as used by its watches (the layout Gadgetbridge documents).
 - `6a4e2810`–`2814`: read, write, notify. `6a4e2820`–`2824`: write.
   `6a4e2803`: read, write.
-- It bonds. Subscribed to 2810 alone, it sent nothing, which points to it
-  waiting for a registration handshake before talking. Velocities may also
-  only come as a session file rather than live per shot. Unconfirmed.
+- It bonds, and stays silent on all five notify characteristics until
+  registered.
+- Confirmed by hand: close-all and register on 2820 were answered on 2810
+  (main channel on **handle 1**), then it sent its device information:
+  "Xero C2 - 2111", Xero C2, firmware 3.06, protocol 151, product 4927,
+  max packet 520. It repeats that every 5 s until answered. Its checksum is
+  the standard FIT CRC-16.
+
+**The handshake (build v38).** A device saved as **Chrono** with this
+service runs it automatically after connecting, following Gadgetbridge
+(`CommunicatorV2` and its GFDI message classes):
+
+1. close all, then register the main channel (GFDI, service 1);
+2. device information → OK, then Stage maths' own device information;
+3. configuration → OK, then its own capabilities echoed back (so Stage
+   maths claims nothing the C2 doesn't have), then "ready to sync";
+4. a current-time request → the time; an auth negotiation → accepted with
+   its flags echoed; anything else → a plain OK so it never stalls. The
+   device's own OKs are logged, never answered.
+
+Every message is logged decoded (`Garmin ← device information: …`,
+`Garmin → OK to …`), and unknown ones with their bytes. The row shows the
+model and firmware once known, and **linked** when the handshake is done.
+Nothing reaches the chrono card yet: how the C2 sends a shot is still
+unknown, and the next capture is a shot fired after "handshake complete".
+
+Wire format, for whoever picks this up: byte 0 of every packet is a handle
+(0 = management: `00 TT <client id u64 LE> …`). A registered handle carries
+GFDI messages COBS-encoded with a 00 before and after, split as
+`[handle] + 19 bytes`. A GFDI message is `<length u16 LE incl. CRC> <type u16
+LE> <payload> <CRC-16 LE>`. Writes go one at a time, like subscriptions.
 
 Saved devices live in `stage-maths:devices:v1`, in this browser only.
 Chrome's device ids mean nothing on another phone, so they are never in a

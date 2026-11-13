@@ -710,7 +710,7 @@
 <script>
 (function () {
   var el = function (id) { return document.getElementById(id); };
-  var BUILD = 'v37';  // bump with CACHE in sw.js
+  var BUILD = 'v38';  // bump with CACHE in sw.js
   el('build').textContent = 'build ' + BUILD + ' \u00b7 tap to update';
 
   // An escape hatch. A stale service worker has sent us chasing bugs that were
@@ -3119,7 +3119,7 @@
 
 
   var SVC_KEY = 'stage-maths:svc';
-  var bleDevice = null, writeChar = null, writeChars = [];
+  var bleDevice = null, writeChar = null, writeChars = [], allChars = [];
 
   function bleLog(line) {
     var lg = el('bleLog');
@@ -3239,6 +3239,228 @@
 
   el('bleReset').addEventListener('click', clearShots);
 
+  // ---- Garmin multi-link (Xero C2) --------------------------------------
+  // Garmin's watch protocol, as implemented by Gadgetbridge (CommunicatorV2
+  // and the GFDI message classes). Runs only for a device saved as Chrono
+  // with the Garmin service. Confirmed on a Xero C2 by hand: close-all and
+  // register answered, then device information arrived on handle 1 and
+  // repeated every 5s until answered. Everything here is logging plus the
+  // replies the device waits for; nothing reaches the chrono card until we
+  // know what a shot looks like.
+  //
+  // Wire format. Receive on 6a4e2810, send on 6a4e2820. Byte 0 of every
+  // packet is a handle: 0 is management, the rest are registered services.
+  //   management: 00 TT <client id, u64 LE> ...  (TT 0 register, 1 its
+  //     reply, 5 close all, 6 its reply)
+  //   a registered handle carries GFDI messages, COBS-encoded with a 00
+  //   before and after, split across packets: [handle] + up to 19 bytes.
+  //   GFDI message: <length u16 LE, including the CRC> <type u16 LE>
+  //     <payload> <CRC-16 u16 LE, the FIT checksum, over everything before it>
+  var GARMIN_SVC = '6a4e2800-667b-11e3-949a-0800200c9a66';
+  var G_CLIENT = 2;          // the client id Gadgetbridge uses; replies echo it
+  var G = null;              // { rx, tx, rec, handle, buf, at, q, ready }
+  var G_NAMES = { 5000: 'response', 5002: 'download request', 5003: 'upload request',
+    5004: 'file transfer data', 5005: 'create file', 5008: 'set file flag',
+    5011: 'FIT definition', 5012: 'FIT data', 5014: 'weather request',
+    5024: 'device information', 5026: 'device settings', 5030: 'system event',
+    5031: 'supported file types', 5033: 'notification update', 5034: 'notification control',
+    5035: 'notification data', 5036: 'notification subscription', 5039: 'find my phone',
+    5040: 'find my phone cancel', 5041: 'music control', 5042: 'music capabilities',
+    5043: 'protobuf request', 5044: 'protobuf response', 5049: 'music entity update',
+    5050: 'configuration', 5052: 'current time request', 5101: 'auth negotiation' };
+  function gName(t) { return G_NAMES[t] || 'message ' + t; }
+
+  var CRC_T = [0x0000, 0xCC01, 0xD801, 0x1400, 0xF001, 0x3C00, 0x2800, 0xE401,
+               0xA001, 0x6C00, 0x7800, 0xB401, 0x5000, 0x9C01, 0x8801, 0x4400];
+  function gCrc(b, n) {
+    var c = 0;
+    for (var i = 0; i < n; i++) {
+      var x = b[i], t;
+      t = CRC_T[c & 15]; c = (c >> 4) & 0x0FFF; c = c ^ t ^ CRC_T[x & 15];
+      t = CRC_T[c & 15]; c = (c >> 4) & 0x0FFF; c = c ^ t ^ CRC_T[(x >> 4) & 15];
+    }
+    return c;
+  }
+
+  // COBS with Garmin's extra leading 00 as well as the trailing one.
+  function cobsEncode(data) {
+    var out = [0], i = 0;
+    while (true) {
+      var start = i;
+      while (i < data.length && data[i] !== 0 && i - start < 254) i++;
+      var run = i - start;
+      out.push(run + 1);
+      for (var k = start; k < i; k++) out.push(data[k]);
+      if (run === 254) { if (i >= data.length) break; continue; }   // 0xFF block: no implied zero
+      if (i >= data.length) break;
+      i++;                                                          // the zero this block stands for
+    }
+    out.push(0);
+    return out;
+  }
+  function cobsDecode(body) {          // body: the bytes between the 00 delimiters
+    var out = [], i = 0;
+    while (i < body.length) {
+      var code = body[i++];
+      for (var k = 1; k < code && i < body.length; k++) out.push(body[i++]);
+      if (code !== 0xFF && i < body.length) out.push(0);
+    }
+    return out;
+  }
+
+  function u16(b, o) { return b[o] | (b[o + 1] << 8); }
+  function u32(b, o) { return (b[o] | (b[o + 1] << 8) | (b[o + 2] << 16) | (b[o + 3] << 24)) >>> 0; }
+  function w16(a, v) { a.push(v & 255, (v >> 8) & 255); }
+  function w32(a, v) { a.push(v & 255, (v >>> 8) & 255, (v >>> 16) & 255, (v >>> 24) & 255); }
+  function wStr(a, str) {
+    var e = Array.from(new TextEncoder().encode(str)).slice(0, 255);
+    a.push(e.length); e.forEach(function (x) { a.push(x); });
+  }
+  function hexA(a) { return a.map(function (x) { return x.toString(16).padStart(2, '0'); }).join(' '); }
+
+  // Writes go one at a time, like subscriptions: Android runs one GATT
+  // operation at once.
+  function gWrite(bytes) {
+    if (!G) return;
+    var g = G, u = new Uint8Array(bytes);
+    g.q = g.q.then(function () {
+      if (G !== g) return;
+      var fn = g.tx.writeValueWithoutResponse ? 'writeValueWithoutResponse' : 'writeValue';
+      return g.tx[fn](u);
+    }).catch(function (err) { bleLog('Garmin: write failed: ' + err.message); });
+  }
+
+  function gMgmt(type, tail) {
+    var a = [0, type];
+    w32(a, G_CLIENT); w32(a, 0);
+    tail.forEach(function (x) { a.push(x); });
+    while (a.length < 13) a.push(0);
+    return a;
+  }
+
+  // Send one GFDI message. body starts with the type; length and CRC are
+  // added here, then COBS, then [handle] + 19-byte pieces.
+  function gSend(body, what) {
+    if (!G || !G.handle) return;
+    var m = [0, 0].concat(body);
+    var len = m.length + 2;
+    m[0] = len & 255; m[1] = (len >> 8) & 255;
+    w16(m, gCrc(m, m.length));
+    var enc = cobsEncode(m);
+    for (var i = 0; i < enc.length; i += 19) gWrite([G.handle].concat(enc.slice(i, i + 19)));
+    bleLog('Garmin → ' + what);
+  }
+  function gAck(type) {
+    var b = []; w16(b, 5000); w16(b, type); b.push(0);
+    gSend(b, 'OK to ' + gName(type));
+  }
+
+  function garminStart(chars, rec) {
+    var find = function (n) { return chars.filter(function (c) { return c.uuid === '6a4e' + n + '-667b-11e3-949a-0800200c9a66'; })[0]; };
+    var rx = find('2810'), tx = find('2820');
+    if (!rx || !tx) { bleLog('Garmin: 2810/2820 not found, handshake skipped.'); return; }
+    G = { rx: rx, tx: tx, rec: rec, handle: 0, buf: [], at: 0, q: Promise.resolve(), ready: false };
+    bleLog('Garmin: starting handshake');
+    gWrite(gMgmt(5, []));                          // close all
+  }
+  function garminStop() { if (G) { G = null; renderDevices(); } }
+
+  function garminPacket(c, b) {
+    if (!G || c !== G.rx || !b.length) return;
+    if (b[0] === 0) {
+      var type = b[1];
+      if (b.length < 10 || u32(b, 2) !== G_CLIENT || u32(b, 6) !== 0) return;   // another app's
+      if (type === 6) {
+        bleLog('Garmin: old channels closed, registering');
+        var t = []; w16(t, 1); t.push(0);
+        gWrite(gMgmt(0, t));                      // register GFDI (service 1), not reliable
+      } else if (type === 1 && b.length >= 14) {
+        var svc = u16(b, 10), st = b[12];
+        if (svc === 1 && st === 0) { G.handle = b[13]; bleLog('Garmin: registered, handle ' + G.handle); }
+        else bleLog('Garmin: register refused, service ' + svc + ' status ' + st);
+      }
+      return;
+    }
+    if (b[0] !== G.handle) return;
+    var now = Date.now();
+    if (now - G.at > 1500) G.buf = [];             // a stale half-message, as Gadgetbridge does
+    G.at = now;
+    for (var i = 1; i < b.length; i++) G.buf.push(b[i]);
+    // Pull out every complete 00 ... 00 frame.
+    while (true) {
+      var s = G.buf.indexOf(0);
+      if (s < 0) { G.buf = []; return; }
+      var e = G.buf.indexOf(0, s + 1);
+      if (e < 0) { G.buf = G.buf.slice(s); return; }
+      if (e === s + 1) { G.buf = G.buf.slice(e); continue; }     // 00 00: the gap between frames
+      var body = G.buf.slice(s + 1, e);
+      G.buf = G.buf.slice(e + 1);
+      gMessage(cobsDecode(body));
+    }
+  }
+
+  function gMessage(m) {
+    if (m.length < 6 || u16(m, 0) !== m.length) { bleLog('Garmin ← bad length: ' + hexA(m)); return; }
+    var n = m.length;
+    if (u16(m, n - 2) !== gCrc(m, n - 2)) { bleLog('Garmin ← bad checksum: ' + hexA(m)); return; }
+    var type = u16(m, 2), p = m.slice(4, n - 2), rec = G.rec;
+
+    if (type === 5000) {
+      bleLog('Garmin ← ' + (p[2] === 0 ? 'OK' : 'status ' + p[2]) + ' to ' + gName(u16(p, 0)) +
+        (p.length > 3 ? '  ' + hexA(p.slice(3)) : ''));
+      return;
+    }
+    if (type === 5024) {
+      var o = 0, rd = function () { var l = p[o++]; var t = new TextDecoder().decode(new Uint8Array(p.slice(o, o + l))); o += l; return t; };
+      var proto = u16(p, 0), prod = u16(p, 2), sw = u16(p, 8), mps = u16(p, 10);
+      o = 12;
+      var bt = rd(), maker = rd(), model = rd();
+      var fw = Math.floor(sw / 100) + '.' + String(sw % 100).padStart(2, '0');
+      bleLog('Garmin ← device information: ' + bt + ', ' + maker + ' ' + model + ', firmware ' + fw +
+        ', protocol ' + proto + ', product ' + prod + ', max packet ' + mps);
+      rec.model = model.slice(0, 16); rec.fw = fw.slice(0, 16);
+      persistDevices(); renderDevices();
+      gAck(5024);
+      var r = []; w16(r, 5000); w16(r, 5024); r.push(0);
+      w16(r, 150); w16(r, 0xFFFF); w32(r, 0xFFFFFFFF); w16(r, 7791); w16(r, 0xFFFF);
+      wStr(r, 'Stage maths'); wStr(r, 'Stage maths'); wStr(r, 'web');
+      r.push(Math.floor(proto / 100) === 1 ? 1 : 0);
+      gSend(r, 'device information for Stage maths');
+      return;
+    }
+    if (type === 5050) {
+      var cn = p[0], caps = p.slice(1, 1 + cn);
+      bleLog('Garmin ← configuration: ' + cn + ' bytes of capabilities  ' + hexA(caps));
+      gAck(5050);
+      var c = []; w16(c, 5050); c.push(cn); caps.forEach(function (x) { c.push(x); });
+      gSend(c, 'configuration (its own capabilities, echoed)');
+      var ev = []; w16(ev, 5030); ev.push(8, 0);
+      gSend(ev, 'ready to sync');
+      G.ready = true;
+      bleLog('Garmin: handshake complete. Fire a shot and copy this log.');
+      renderDevices();
+      return;
+    }
+    if (type === 5101) {
+      bleLog('Garmin ← auth negotiation  ' + hexA(p));
+      var a = []; w16(a, 5000); w16(a, 5101); a.push(0, 0, p[0] || 0);
+      w32(a, p.length >= 5 ? u32(p, 1) : 0);
+      gSend(a, 'auth accepted, flags echoed');
+      return;
+    }
+    if (type === 5052) {
+      var ref = u32(p, 0), nowS = Math.floor(Date.now() / 1000);
+      bleLog('Garmin ← current time request');
+      var q = []; w16(q, 5000); w16(q, 5052); q.push(0);
+      w32(q, ref); w32(q, nowS - 631065600);            // Garmin's epoch is 1989-12-31
+      w32(q, -new Date().getTimezoneOffset() * 60); w32(q, 0); w32(q, 0);
+      gSend(q, 'current time');
+      return;
+    }
+    bleLog('Garmin ← ' + gName(type) + ' [' + p.length + ']  ' + hexA(p));
+    gAck(type);
+  }
+
   // ---- Saved devices ---------------------------------------------------
   // A page cannot scan for Bluetooth devices; only Chrome's own picker lists
   // what is nearby. What it can do is keep its own list of devices you have
@@ -3264,7 +3486,7 @@
     var num = function (v) { return typeof v === 'number' && isFinite(v) && v > 0 ? v : 0; };
     return { id: r.id, name: str(r.name, 64), nick: str(r.nick, 40),
              kind: r.kind === 'chrono' ? 'chrono' : 'timer', svc: str(r.svc, 64) || NUS,
-             added: num(r.added), last: num(r.last) };
+             added: num(r.added), last: num(r.last), model: str(r.model, 16), fw: str(r.fw, 16) };
   }
 
   function loadDevices() {
@@ -3347,13 +3569,14 @@
     }
     bleDevice = d;
     bleRec = rec;
+    G = null;
     var svc = parseUuid(rec.svc) || NUS;
     if (!d._smListen) {
       d._smListen = true;
       d.addEventListener('gattserverdisconnected', function () {
         if (bleDevice !== d) return;           // an old device dropping after a switch
         bleLog('Disconnected.');
-        writeChar = null; writeChars = []; renderTargets();
+        writeChar = null; writeChars = []; renderTargets(); garminStop();
         if (bleState !== 'notfound' && bleState !== 'failing') setBle('idle');
       });
     }
@@ -3377,6 +3600,7 @@
         writeChar = null;
 
         writeChars = [];
+        allChars = chars;
         var listen = [];
         chars.forEach(function (c) {
           var props = [];
@@ -3412,6 +3636,7 @@
             // never fed to the AMG shot parser. Checked per packet, so
             // switching a live device to Chrono takes effect at once.
             if (rec.kind === 'timer') onShotPacket(dv);
+            else garminPacket(c, new Uint8Array(dv.buffer, dv.byteOffset, dv.byteLength));
           });
           return chain.then(function () {
             return c.startNotifications()
@@ -3423,6 +3648,7 @@
       .then(function () {
         bleLog('Ready.' + (rec.kind === 'timer' ? ' Run the timer.' : ''));
         if (rec.kind === 'timer') { el('bleShotsCard').hidden = false; renderShots(); }
+        else if (rec.svc === GARMIN_SVC) garminStart(allChars, rec);
       })
       .catch(function (err) {
         var timedOut = err && err.message === 'timeout';
@@ -3495,7 +3721,7 @@
     var d = bleDevice;
     bleState = 'idle';
     if (d && d.gatt && d.gatt.connected) d.gatt.disconnect();
-    writeChar = null; writeChars = []; renderTargets();
+    writeChar = null; writeChars = []; renderTargets(); garminStop();
     setBle('idle');
   }
 
@@ -3572,8 +3798,14 @@
       });
       nick.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') nick.blur(); });
       row.querySelector('.near').hidden = !isNear(r.id);
+      if (G && G.rec === r && G.ready) {
+        var lk = document.createElement('span');
+        lk.className = 'fa'; lk.textContent = 'linked';
+        row.querySelector('.top').appendChild(lk);
+      }
       var bits = [r.name || 'no Bluetooth name'];
       bits.push(r.svc === NUS ? 'UART service' : 'service ' + r.svc);
+      if (r.fw) bits.push((r.model ? r.model + ' \u00b7 ' : '') + 'firmware ' + r.fw);
       bits.push(r.last ? 'last connected ' + fmtDate(new Date(r.last)) : 'never connected');
       row.querySelector('.meta').textContent = bits.join('  ·  ');
       row.querySelectorAll('.seg button').forEach(function (b) {

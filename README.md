@@ -336,6 +336,26 @@ sharing in words (support and subscribe responses, alert notifications, alert
 types by name); a Xero alert's details are an undocumented extension, shown by
 field number with its bytes.
 
+**Shots (v42 capture, six shots checked against the C2's screen).** After
+the subscription the C2 sends an alert notification at once (its current
+state) and then one per shot, within a second. The details sit in extension
+field **1008** of the alert:
+
+- 1: state (0 before shooting, 4 during a string)
+- 2: the latest shot: 1 time (Garmin's clock), 2 **speed in m/s** (float),
+  4 shot number
+- 3: the string so far: 1 low, 2 high, 3 average, 7 SD (all m/s, floats;
+  low is 1e25 before the first shot), 4 shot count, 5 bullet weight in gr,
+  8 power factor, 9 energy in ft·lbf, 10 a 16-byte string id, 12 the
+  profile name ("Pistol 2"); 6 and 11 unknown
+- 5: a float near 98, probably battery %
+
+381.54 m/s × 3.28084 = 1251.77, shown by the C2 as 1251.8 fps. **v43** adds
+each new shot to the Chrono card (rounded to 0.1 fps), once per string id and
+shot number, logs a skipped number as missed, treats the first alert after
+subscribing as the C2's state (a shot in it is not added), fills an empty
+bullet weight, and shows the C2's summary under the result.
+
 Leads on how shots arrive, none confirmed: the event-sharing service has an
 alert type `XERO_CHRONOGRAPH` (15) and the C2 claims the `EVENT_SHARING`
 capability (bit 81); Smart field 48 is a `XeroChronographService`, so far
@@ -352,8 +372,7 @@ Chrome id, updates that entry instead of creating a twin.
 Every message is logged decoded (`Garmin ← device information: …`,
 `Garmin → OK to …`), and unknown ones with their bytes. The row shows the
 model and firmware once known, and **linked** when the handshake is done.
-Nothing reaches the chrono card yet: how the C2 sends a shot is still
-unknown, and the next capture is a shot fired after "handshake complete".
+Shots reach the Chrono card from v43 (see below).
 
 Wire format, for whoever picks this up: byte 0 of every packet is a handle
 (0 = management: `00 TT <client id u64 LE> …`). A registered handle carries
@@ -471,8 +490,11 @@ Loads are their own store (`stage-maths:chrono:v1`), separate from sessions,
 the board and drills. They go in the backup file (loads with no strings are
 left out) and **never** in a share link.
 
-The Garmin Xero C2 doesn't feed this yet: its Bluetooth protocol is
-undocumented, so velocities are typed in for now.
+A connected Garmin Xero C2 (saved as Chrono) adds each shot to the current
+string as it is fired, at 0.1 fps as the C2 shows it; typed shots stay whole
+fps. It fills the bullet weight from the C2's profile only when the field is
+empty, and shows the C2's own count, average and power factor under the
+result as a check. Saving and clearing stay manual.
 
 ## Drills tab
 

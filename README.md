@@ -249,8 +249,35 @@ only list of what's nearby. What the app can do depends on the Chrome:
   device id, the saved entry follows it and keeps its nickname.
 
 A connection attempt gives up after 15 seconds. Connecting to one device
-disconnects the other, as only one is held at a time. A device that connects
-but lacks its service says so, rather than "not found".
+disconnects the other, as only one is held at a time.
+
+A device that connects but lacks its service says so, rather than "not
+found", and offers **Try with the UUID in the field**: put the right UUID in
+Service UUID and tap it. That opens the picker narrowed to the device (Chrome
+only grants the services named when you pick), then updates the saved entry.
+No need to forget and re-add.
+
+Notifications are subscribed **one characteristic at a time**. Android runs a
+single Bluetooth operation at once; subscribing to several together got the
+first through and failed the rest with "GATT operation failed for unknown
+reason". The AMG has one notify characteristic, so this only showed on the
+Xero C2, which has five.
+
+**Send a command** writes to the characteristic picked in its chip row:
+every writable one on the connected device, by the short part of its UUID.
+It defaults to the AMG's RX, else the first writable one.
+
+### Garmin Xero C2
+
+What's known so far, from nRF Connect and the Timer tab:
+
+- Service `6a4e2800-667b-11e3-949a-0800200c9a66`, Garmin's multi-link
+  protocol as used by its watches (the layout Gadgetbridge documents).
+- `6a4e2810`–`2814`: read, write, notify. `6a4e2820`–`2824`: write.
+  `6a4e2803`: read, write.
+- It bonds. Subscribed to 2810 alone, it sent nothing, which points to it
+  waiting for a registration handshake before talking. Velocities may also
+  only come as a session file rather than live per shot. Unconfirmed.
 
 Saved devices live in `stage-maths:devices:v1`, in this browser only.
 Chrome's device ids mean nothing on another phone, so they are never in a

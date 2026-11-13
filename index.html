@@ -530,7 +530,8 @@
         <label for="bleHex">Bytes as hex</label>
         <input type="text" id="bleHex" placeholder="01 05" autocomplete="off" spellcheck="false">
       </div>
-      <p class="hint">For working out the remote start. Writes to the first writable characteristic.</p>
+      <p class="hint" id="bleTargetHint">Connect a device to choose where this writes.</p>
+      <div class="chips who" id="bleTargets"></div>
       <button type="button" id="bleSend" class="ghost">Send</button>
     </div>
   </div>
@@ -709,7 +710,7 @@
 <script>
 (function () {
   var el = function (id) { return document.getElementById(id); };
-  var BUILD = 'v36';  // bump with CACHE in sw.js
+  var BUILD = 'v37';  // bump with CACHE in sw.js
   el('build').textContent = 'build ' + BUILD + ' \u00b7 tap to update';
 
   // An escape hatch. A stale service worker has sent us chasing bugs that were
@@ -3118,7 +3119,7 @@
 
 
   var SVC_KEY = 'stage-maths:svc';
-  var bleDevice = null, writeChar = null;
+  var bleDevice = null, writeChar = null, writeChars = [];
 
   function bleLog(line) {
     var lg = el('bleLog');
@@ -3289,7 +3290,45 @@
     return best;
   }
 
-  function devNote(t) { el('devNote').textContent = t; }
+  // A note under the device list. Given the record whose service was missing,
+  // it also offers the repair: pick that device again with the UUID in the
+  // field. Chrome only grants the services named at pick time, so a new
+  // service needs a pick, but not a forget and re-add.
+  function devNote(t, fixRec) {
+    var n = el('devNote');
+    n.textContent = t;
+    if (!fixRec) return;
+    n.appendChild(document.createTextNode(' Put the right one in Service UUID below, then: '));
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'ghost';
+    b.id = 'devFix';
+    b.textContent = 'Try with the UUID in the field';
+    b.addEventListener('click', function () { repairService(fixRec); });
+    n.appendChild(document.createElement('br'));
+    n.appendChild(b);
+  }
+
+  function repairService(rec) {
+    var raw = el('svcUuid').value.trim().toLowerCase();
+    var svc = parseUuid(raw);
+    if (svc === null) { devNote('Enter a service UUID first.', rec); return; }
+    if (raw === rec.svc) { devNote(devLabel(rec) + ' already uses ' + raw + '. Change the Service UUID first.', rec); return; }
+    devNote('');
+    var opts = rec.name ? { filters: [{ name: rec.name }], optionalServices: [svc] }
+                        : { acceptAllDevices: true, optionalServices: [svc] };
+    navigator.bluetooth.requestDevice(opts).then(function (d) {
+      if (d.id !== rec.id) {
+        var dup = devById(d.id);
+        if (dup && dup !== rec) devices = devices.filter(function (x) { return x !== dup; });
+        rec.id = d.id;
+      }
+      rec.svc = raw;
+      persistDevices();
+      renderDevices();
+      return connectDevice(d, rec);
+    }).catch(function (err) { bleLog('Error: ' + err.message); });
+  }
 
   function setBle(st) { bleState = st; bleOn = st === 'on'; renderTimerBar(); renderDevices(); }
 
@@ -3314,7 +3353,7 @@
       d.addEventListener('gattserverdisconnected', function () {
         if (bleDevice !== d) return;           // an old device dropping after a switch
         bleLog('Disconnected.');
-        writeChar = null;
+        writeChar = null; writeChars = []; renderTargets();
         if (bleState !== 'notfound' && bleState !== 'failing') setBle('idle');
       });
     }
@@ -3337,7 +3376,9 @@
         el('bleInfoCard').hidden = false;
         writeChar = null;
 
-        var jobs = chars.map(function (c) {
+        writeChars = [];
+        var listen = [];
+        chars.forEach(function (c) {
           var props = [];
           ['read', 'write', 'writeWithoutResponse', 'notify', 'indicate'].forEach(function (k) {
             if (c.properties[k]) props.push(k);
@@ -3350,26 +3391,34 @@
           list.appendChild(div);
           bleLog('char  ' + c.uuid + '  ' + label + props.join(', '));
 
-          if (c.uuid === NUS_RX) writeChar = c;
-          else if (!writeChar && (c.properties.write || c.properties.writeWithoutResponse)) writeChar = c;
+          if (c.properties.write || c.properties.writeWithoutResponse) writeChars.push(c);
+          if (c.properties.notify || c.properties.indicate) listen.push(c);
+        });
+        // The AMG's RX if it is there, else the first writable one; the Send
+        // card lets you pick another.
+        writeChar = writeChars.filter(function (c) { return c.uuid === NUS_RX; })[0] || writeChars[0] || null;
+        renderTargets();
 
-          if (c.properties.notify || c.properties.indicate) {
-            var short = c.uuid.slice(4, 8);
-            c.addEventListener('characteristicvaluechanged', function (ev) {
-              var dv = ev.target.value;
-              bleLog(short + '  [' + dv.byteLength + ']  ' + hex(dv) + '\n        "' + ascii(dv) + '"');
-              // A chronograph's packets are logged for working out its format,
-              // never fed to the AMG shot parser. Checked per packet, so
-              // switching a live device to Chrono takes effect at once.
-              if (rec.kind === 'timer') onShotPacket(dv);
-            });
+        // One subscription at a time. Android runs a single GATT operation at
+        // once, so firing them together got the first through and failed the
+        // rest with "GATT operation failed for unknown reason". The AMG has
+        // one notify characteristic, so it never showed until the Xero's five.
+        return listen.reduce(function (chain, c) {
+          var short = c.uuid.slice(4, 8);
+          c.addEventListener('characteristicvaluechanged', function (ev) {
+            var dv = ev.target.value;
+            bleLog(short + '  [' + dv.byteLength + ']  ' + hex(dv) + '\n        "' + ascii(dv) + '"');
+            // A chronograph's packets are logged for working out its format,
+            // never fed to the AMG shot parser. Checked per packet, so
+            // switching a live device to Chrono takes effect at once.
+            if (rec.kind === 'timer') onShotPacket(dv);
+          });
+          return chain.then(function () {
             return c.startNotifications()
               .then(function () { bleLog('Listening on ' + short); })
               .catch(function (err) { bleLog('Could not subscribe to ' + short + ': ' + err.message); });
-          }
-          return Promise.resolve();
-        });
-        return Promise.all(jobs);
+          });
+        }, Promise.resolve());
       })
       .then(function () {
         bleLog('Ready.' + (rec.kind === 'timer' ? ' Run the timer.' : ''));
@@ -3384,8 +3433,7 @@
         try { if (d.gatt.connected || timedOut) d.gatt.disconnect(); } catch (e) {}
         if (reached) {
           setBle('idle');
-          devNote('Connected to ' + devLabel(rec) + ', but it has no service ' + rec.svc +
-            '. Forget it and add it again with the right Service UUID.');
+          devNote('Connected to ' + devLabel(rec) + ', but it has no service ' + rec.svc + '.', rec);
         } else {
           setBle('notfound');
           if (!quiet) devNote(devLabel(rec) + ' did not answer. Check it is switched on and close, then try again.');
@@ -3447,7 +3495,7 @@
     var d = bleDevice;
     bleState = 'idle';
     if (d && d.gatt && d.gatt.connected) d.gatt.disconnect();
-    writeChar = null;
+    writeChar = null; writeChars = []; renderTargets();
     setBle('idle');
   }
 
@@ -3633,13 +3681,32 @@
     }
   });
 
+  // Which characteristic Send writes to: every writable one on the connected
+  // device, by the short part of its UUID (2820, not 6a4e2820-...).
+  function renderTargets() {
+    var box = el('bleTargets');
+    box.innerHTML = '';
+    el('bleTargetHint').textContent = writeChars.length
+      ? 'Writes to the characteristic picked below. The AMG listens on its RX.'
+      : 'Connect a device to choose where this writes.';
+    writeChars.forEach(function (c) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = c.uuid.slice(4, 8) + (c.uuid === NUS_RX ? ' RX' : '');
+      b.title = c.uuid;
+      b.setAttribute('aria-pressed', String(c === writeChar));
+      b.addEventListener('click', function () { writeChar = c; renderTargets(); });
+      box.appendChild(b);
+    });
+  }
+
   el('bleSend').addEventListener('click', function () {
     if (!writeChar) { bleLog('No writable characteristic found.'); return; }
     var bytes = (el('bleHex').value.match(/[0-9a-fA-F]{2}/g) || []).map(function (h) { return parseInt(h, 16); });
     if (!bytes.length) { bleLog('Enter bytes as hex, e.g. 01 05'); return; }
     var fn = writeChar.writeValueWithoutResponse ? 'writeValueWithoutResponse' : 'writeValue';
     writeChar[fn](new Uint8Array(bytes))
-      .then(function () { bleLog('Sent ' + el('bleHex').value.trim()); })
+      .then(function () { bleLog('Sent ' + bytes.map(function (x) { return x.toString(16).padStart(2, '0'); }).join(' ') + ' to ' + writeChar.uuid.slice(4, 8)); })
       .catch(function (err) { bleLog('Write failed: ' + err.message); });
   });
 

@@ -441,11 +441,15 @@
         <button type="button" id="bleConnect" class="primary">Add device</button>
       </div>
       <p class="hint" id="devNote" style="margin-top:10px"></p>
-      <div class="field">
-        <label for="svcUuid">Service UUID</label>
-        <input type="text" id="svcUuid" placeholder="service uuid" autocomplete="off" spellcheck="false">
+      <p class="hint">Add device recognises the AMG timer and the Garmin Xero C2 by themselves.</p>
+      <button type="button" class="ghost" id="otherDev" aria-expanded="false">Other device…</button>
+      <div id="otherBox" hidden>
+        <div class="field" style="margin-top:12px">
+          <label for="svcUuid">Service UUID</label>
+          <input type="text" id="svcUuid" placeholder="service uuid" autocomplete="off" spellcheck="false">
+        </div>
+        <p class="hint">For a device that is neither. Add device asks Chrome for this service as well as the two known ones, and a device that has it is saved with it.</p>
       </div>
-      <p class="hint">Used when you add a device. Defaults to the Nordic UART Service, which is what the AMG Commander uses. Each saved device keeps the one it was added with.</p>
     </div>
 
     <div class="card" id="chronoCard">
@@ -711,7 +715,7 @@
 <script>
 (function () {
   var el = function (id) { return document.getElementById(id); };
-  var BUILD = 'v43';  // bump with CACHE in sw.js
+  var BUILD = 'v44';  // bump with CACHE in sw.js
   el('build').textContent = 'build ' + BUILD + ' \u00b7 tap to update';
 
   // An escape hatch. A stale service worker has sent us chasing bugs that were
@@ -3168,11 +3172,23 @@
   KNOWN[NUS_RX] = 'RX — write to timer';
   KNOWN[NUS_TX] = 'TX — timer sends';
 
-  try { el('svcUuid').value = localStorage.getItem(SVC_KEY) || NUS; } catch (e) { el('svcUuid').value = NUS; }
-  if (!el('svcUuid').value) el('svcUuid').value = NUS;
+  // The Other device field: empty unless you are trying a device that is
+  // neither the AMG nor the C2. Before v44 it held the service for every
+  // Add device and defaulted to the AMG's; a stored known UUID is dropped.
+  try {
+    var sv = (localStorage.getItem(SVC_KEY) || '').trim().toLowerCase();
+    el('svcUuid').value = (sv === NUS || sv === '6a4e2800-667b-11e3-949a-0800200c9a66') ? '' : sv;
+  } catch (e) { el('svcUuid').value = ''; }
   el('svcUuid').addEventListener('input', function () {
     try { localStorage.setItem(SVC_KEY, el('svcUuid').value.trim()); } catch (e) {}
   });
+  function showOther(on) {
+    el('otherBox').hidden = !on;
+    el('otherDev').setAttribute('aria-expanded', String(on));
+    el('otherDev').textContent = on ? 'Hide other device' : 'Other device…';
+  }
+  showOther(!!el('svcUuid').value);
+  el('otherDev').addEventListener('click', function () { showOther(el('otherBox').hidden); });
 
   // AMG Lab Commander frame, confirmed against two real captures:
   //   01 TT SS SS CCCC PPPP FFFF MMMM 00 ??
@@ -3771,44 +3787,72 @@
     return best;
   }
 
-  // A note under the device list. Given the record whose service was missing,
-  // it also offers the repair: pick that device again with the UUID in the
-  // field. Chrome only grants the services named at pick time, so a new
-  // service needs a pick, but not a forget and re-add.
+  // Services. The app knows two and asks Chrome for both at every pick, so
+  // it can tell an AMG from a C2 by itself. Chrome only lets a page use the
+  // services it named when the device was picked, so the list also carries
+  // the device's saved service and the Other device field, if filled.
+  function otherSvc() {
+    var v = el('svcUuid').value.trim().toLowerCase();
+    return parseUuid(v) === null ? '' : v;
+  }
+  function svcCandidates(rec, extra) {
+    var out = [];
+    [extra, rec && rec.svc, NUS, GARMIN_SVC].forEach(function (u) {
+      if (u && out.indexOf(u) < 0) out.push(u);
+    });
+    return out;
+  }
+  function svcName(u) {
+    return u === NUS ? 'AMG timer (UART)' : u === GARMIN_SVC ? 'Garmin' : u;
+  }
+  function pickOpts(rec, extra) {
+    var svcs = svcCandidates(rec, extra).map(parseUuid);
+    return rec && rec.name ? { filters: [{ name: rec.name }], optionalServices: svcs }
+                           : { acceptAllDevices: true, optionalServices: svcs };
+  }
+  // A picked device may come back under a new Chrome id; follow it.
+  function followId(rec, d) {
+    if (d.id === rec.id) return;
+    var dup = devById(d.id);
+    if (dup && dup !== rec) devices = devices.filter(function (x) { return x !== dup; });
+    rec.id = d.id;
+    persistDevices();
+  }
+
+  // A note under the device list. Given a record, it also offers to pick
+  // that device again, asking Chrome for every known service: the fix when
+  // Chrome had not yet allowed the service the device really has.
   function devNote(t, fixRec) {
     var n = el('devNote');
     n.textContent = t;
     if (!fixRec) return;
-    n.appendChild(document.createTextNode(' Put the right one in Service UUID below, then: '));
     var b = document.createElement('button');
     b.type = 'button';
     b.className = 'ghost';
     b.id = 'devFix';
-    b.textContent = 'Try with the UUID in the field';
-    b.addEventListener('click', function () { repairService(fixRec); });
+    b.textContent = 'Pick it again';
+    b.addEventListener('click', function () { repickDevice(fixRec); });
     n.appendChild(document.createElement('br'));
     n.appendChild(b);
   }
-
-  function repairService(rec) {
-    var raw = el('svcUuid').value.trim().toLowerCase();
-    var svc = parseUuid(raw);
-    if (svc === null) { devNote('Enter a service UUID first.', rec); return; }
-    if (raw === rec.svc) { devNote(devLabel(rec) + ' already uses ' + raw + '. Change the Service UUID first.', rec); return; }
+  function repickDevice(rec) {
     devNote('');
-    var opts = rec.name ? { filters: [{ name: rec.name }], optionalServices: [svc] }
-                        : { acceptAllDevices: true, optionalServices: [svc] };
-    navigator.bluetooth.requestDevice(opts).then(function (d) {
-      if (d.id !== rec.id) {
-        var dup = devById(d.id);
-        if (dup && dup !== rec) devices = devices.filter(function (x) { return x !== dup; });
-        rec.id = d.id;
-      }
-      rec.svc = raw;
-      persistDevices();
-      renderDevices();
-      return connectDevice(d, rec);
+    var extra = otherSvc();
+    navigator.bluetooth.requestDevice(pickOpts(rec, extra)).then(function (d) {
+      followId(rec, d);
+      return connectDevice(d, rec, false, { extra: extra });
     }).catch(function (err) { bleLog('Error: ' + err.message); });
+  }
+
+  // Try each candidate service in turn; the first the device has wins.
+  function findService(server, list) {
+    var i = 0;
+    var next = function () {
+      if (i >= list.length) return Promise.reject(new Error('NOSVC'));
+      var u = list[i++];
+      return server.getPrimaryService(parseUuid(u)).then(function (sv) { return { u: u, s: sv }; }, next);
+    };
+    return next();
   }
 
   function setBle(st) { bleState = st; bleOn = st === 'on'; renderTimerBar(); renderDevices(); }
@@ -3822,14 +3866,16 @@
 
   // Everything after a device object is in hand: connect, find the service,
   // subscribe. One path for a new device, a remembered one and a picked one.
-  function connectDevice(d, rec, quiet) {
+  // opts: { fresh: a device just added, removed again if it has no known
+  // service; extra: the Other device service, tried first }.
+  function connectDevice(d, rec, quiet, opts) {
+    opts = opts || {};
     if (bleDevice && bleDevice !== d && bleDevice.gatt && bleDevice.gatt.connected) {
       try { bleDevice.gatt.disconnect(); } catch (e) {}
     }
     bleDevice = d;
     bleRec = rec;
     G = null;
-    var svc = parseUuid(rec.svc) || NUS;
     if (!d._smListen) {
       d._smListen = true;
       d.addEventListener('gattserverdisconnected', function () {
@@ -3849,9 +3895,23 @@
         persistDevices();
         setBle('on');
         devNote('');
-        return server.getPrimaryService(svc);
+        return findService(server, svcCandidates(rec, opts.extra));
       })
-      .then(function (service) { return service.getCharacteristics(); })
+      .then(function (found) {
+        // The service the device really has decides what it is saved with,
+        // and its type when that changes (or it is new). The Timer / Chrono
+        // buttons still override the type afterwards.
+        if (found.u !== rec.svc || opts.fresh) {
+          if (found.u !== rec.svc) bleLog(devLabel(rec) + ' has the ' + svcName(found.u) + ' service' +
+            (opts.fresh ? '' : ', not ' + svcName(rec.svc) + '. Saved that.'));
+          rec.svc = found.u;
+          if (found.u === GARMIN_SVC) rec.kind = 'chrono';
+          else if (found.u === NUS) rec.kind = 'timer';
+          persistDevices();
+          renderDevices();
+        }
+        return found.s.getCharacteristics();
+      })
       .then(function (chars) {
         var list = el('bleChars');
         list.innerHTML = '';
@@ -3911,14 +3971,23 @@
       })
       .catch(function (err) {
         var timedOut = err && err.message === 'timeout';
+        var noSvc = err && err.message === 'NOSVC';
         var reached = bleOn;          // connected, then the service step failed
-        bleLog('Error: ' + (timedOut ? 'no answer from ' + devLabel(rec) : err.message));
+        bleLog(noSvc ? devLabel(rec) + ' has none of the services tried: ' + svcCandidates(rec, opts.extra).map(svcName).join(', ')
+                     : 'Error: ' + (timedOut ? 'no answer from ' + devLabel(rec) : err.message));
         if (bleDevice !== d) return;
         bleState = 'failing';         // keep the disconnect event from overwriting the state below
         try { if (d.gatt.connected || timedOut) d.gatt.disconnect(); } catch (e) {}
-        if (reached) {
+        if (reached && opts.fresh && noSvc) {
           setBle('idle');
-          devNote('Connected to ' + devLabel(rec) + ', but it has no service ' + rec.svc + '.', rec);
+          devices = devices.filter(function (x) { return x !== rec; });
+          persistDevices(); renderDevices();
+          devNote(devLabel(rec) + ' is neither an AMG timer nor a Garmin chronograph, so it was not saved.' +
+            ' For another device, use Other device below.');
+        } else if (reached) {
+          setBle('idle');
+          devNote('Connected to ' + devLabel(rec) + ', but Chrome has not allowed this app its service yet.' +
+            ' Pick it again in Chrome\u2019s list:', rec);
         } else {
           setBle('notfound');
           if (!quiet) devNote(devLabel(rec) + ' did not answer. Check it is switched on and close, then try again.');
@@ -3942,19 +4011,10 @@
   function connectSaved(rec) {
     if (!navigator.bluetooth) return;
     devNote('');
-    var svc = parseUuid(rec.svc) || NUS;
     remembered(rec).then(function (d) {
       if (d) return connectDevice(d, rec);
-      var opts = rec.name ? { filters: [{ name: rec.name }], optionalServices: [svc] }
-                          : { acceptAllDevices: true, optionalServices: [svc] };
-      return navigator.bluetooth.requestDevice(opts).then(function (d2) {
-        // Chrome may hand back a new id for the same device; follow it.
-        if (d2.id !== rec.id) {
-          var dup = devById(d2.id);
-          if (dup && dup !== rec) devices = devices.filter(function (x) { return x !== dup; });
-          rec.id = d2.id;
-          persistDevices();
-        }
+      return navigator.bluetooth.requestDevice(pickOpts(rec, '')).then(function (d2) {
+        followId(rec, d2);
         return connectDevice(d2, rec);
       });
     }).catch(function (err) {
@@ -4063,7 +4123,7 @@
         row.querySelector('.top').appendChild(lk);
       }
       var bits = [r.name || 'no Bluetooth name'];
-      bits.push(r.svc === NUS ? 'UART service' : 'service ' + r.svc);
+      bits.push(r.svc === NUS ? 'UART service' : r.svc === GARMIN_SVC ? 'Garmin service' : 'service ' + r.svc);
       if (r.fw) bits.push((r.model ? r.model + ' \u00b7 ' : '') + 'firmware ' + r.fw);
       bits.push(r.last ? 'last connected ' + fmtDate(new Date(r.last)) : 'never connected');
       row.querySelector('.meta').textContent = bits.join('  ·  ');
@@ -4088,37 +4148,35 @@
     });
   }
 
-  // Add device: Chrome's full picker, everything nearby. The pick is saved
-  // as a timer under its Bluetooth name with the service in the field.
+  // Add device: Chrome's full picker, everything nearby, asking for both
+  // known services (and the Other device one, if filled). Which one the
+  // device has decides what it is saved as: the AMG's UART service a timer,
+  // Garmin's a chrono. A saved device keeps its entry; its service changes
+  // only to one it really has, never to whatever was typed.
   el('bleConnect').addEventListener('click', function () {
-    var svc = parseUuid(el('svcUuid').value);
-    if (svc === null) { bleLog('Enter a service UUID first.'); devNote('Enter a service UUID first.'); return; }
     devNote('');
-    navigator.bluetooth.requestDevice({ acceptAllDevices: true, optionalServices: [svc] })
+    var extra = otherSvc();
+    navigator.bluetooth.requestDevice(pickOpts(null, extra))
       .then(function (d) {
         bleLog('Selected ' + (d.name || 'unnamed device'));
-        var svcStr = el('svcUuid').value.trim().toLowerCase() || NUS;
-        var rec = devById(d.id);
+        var rec = devById(d.id), fresh = false;
         if (!rec && d.name) {
           // The same device under a new Chrome id (after a forget, or on a
           // Chrome without remembered permissions): follow it rather than
-          // add a twin with the default type.
-          rec = devices.filter(function (x) { return x.name === d.name && x.svc === svcStr; })[0] || null;
+          // add a twin.
+          rec = devices.filter(function (x) { return x.name === d.name; })[0] || null;
           if (rec) { rec.id = d.id; persistDevices(); }
         }
         if (!rec) {
-          rec = { id: d.id, name: (d.name || '').slice(0, 64), nick: '',
-                  kind: svcStr === GARMIN_SVC ? 'chrono' : 'timer',   // Garmin's service is never a shot timer
-                  svc: svcStr, added: Date.now(), last: 0 };
+          fresh = true;
+          rec = { id: d.id, name: (d.name || '').slice(0, 64), nick: '', kind: 'timer',
+                  svc: extra || NUS, added: Date.now(), last: 0 };
           devices.push(rec);
-          persistDevices();
-        } else {
-          rec.svc = el('svcUuid').value.trim().toLowerCase() || rec.svc;
           persistDevices();
         }
         renderDevices();
         watchSaved();
-        return connectDevice(d, rec);
+        return connectDevice(d, rec, false, { fresh: fresh, extra: extra });
       })
       .catch(function (err) { bleLog('Error: ' + err.message); });
   });
@@ -4159,7 +4217,7 @@
       '# stage-maths timer capture',
       '# when     ' + new Date().toISOString(),
       '# device   ' + ((bleDevice && bleDevice.name) || 'unknown'),
-      '# service  ' + el('svcUuid').value.trim(),
+      '# service  ' + (bleRec ? bleRec.svc : ''),
       '# order    newest first',
       '',
       body

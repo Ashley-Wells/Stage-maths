@@ -224,9 +224,20 @@ is still there underneath for working out a different timer.
 
 ### Saved devices
 
-**Add device** opens Chrome's picker with everything nearby. Whatever you
-pick is saved, as a Timer, under its Bluetooth name and with the Service UUID
-in the field at the time. Each saved device has:
+**Add device** opens Chrome's picker with everything nearby, asking Chrome
+for both services the app knows: the AMG's Nordic UART service and Garmin's
+multi-link service. After you pick, the app checks which one the device has
+and saves it under its Bluetooth name accordingly: UART as a **Timer**,
+Garmin as a **Chrono**. A device with neither is not saved. Picking a device
+that is already saved updates that entry, and its service only ever changes
+to one the device really has (before v44 it took whatever UUID was typed,
+which saved the AMG with the C2's service and stopped it connecting).
+
+**Other device…** opens a Service UUID field for a device that is neither.
+Add device then asks Chrome for that service too, and a device that has it is
+saved with it. The field is remembered; leave it empty for the AMG and C2.
+
+Each saved device has:
 
 - an editable **nickname**, handy when a partner's timer has the same name;
 - a **Timer / Chrono** switch. Only timers feed the shot parser; a chrono's
@@ -251,11 +262,12 @@ only list of what's nearby. What the app can do depends on the Chrome:
 A connection attempt gives up after 15 seconds. Connecting to one device
 disconnects the other, as only one is held at a time.
 
-A device that connects but lacks its service says so, rather than "not
-found", and offers **Try with the UUID in the field**: put the right UUID in
-Service UUID and tap it. That opens the picker narrowed to the device (Chrome
-only grants the services named when you pick), then updates the saved entry.
-No need to forget and re-add.
+Every connection checks which known service the device really has, tried
+in order (its saved one first), and a saved entry with the wrong one repairs
+itself, saying so in the log. Chrome only lets a page use the services named
+when the device was picked; if it hasn't allowed the right one yet, the note
+offers **Pick it again**, which opens the picker narrowed to that device
+asking for every known service. No need to forget and re-add.
 
 Notifications are subscribed **one characteristic at a time**. Android runs a
 single Bluetooth operation at once; subscribing to several together got the

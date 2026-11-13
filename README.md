@@ -205,7 +205,8 @@ stages.
 Sessions live in this browser and nowhere else, so clearing site data loses
 them and a new phone starts empty. **Export file** writes the lot to a dated
 `.json`; **Import file** merges one back, skipping anything already present by
-ID. The same ID rule as share links, so a backup and a shared link can't
+ID. The file also carries drills and chrono loads, and can be exported with no
+sessions at all. The same ID rule as share links, so a backup and a shared link can't
 fight each other. Imported files are validated exactly like share links.
 
 ## Timer tab
@@ -296,6 +297,37 @@ and the origin as the beep.
 
 Remote start is still unknown. The hex box writes arbitrary bytes to the RX
 characteristic if you want to hunt for it.
+
+### Chrono and power factor
+
+Below the timer controls. Each **load** gets a chip, a name and a bullet
+weight in grains, and is set to Minor (125) or Major (160).
+
+Power factor is grains × fps ÷ 1000, judged on the **average** velocity, as a
+chrono stage is (3 shots). Two ways in:
+
+- **Per shot** — type each velocity and press Enter. Each shot shows its own
+  PF, and the string shows average, high, low, extreme spread and SD (sample
+  SD, n−1). Anything outside 100–5000 fps is refused as a typo.
+- **Average** — tally the string on the chronograph and enter its average and
+  shot count once. No spread figures, since there are none to work from.
+
+The result shows the PF, **PASS** or **FAIL**, and the margin to the floor.
+PF is **truncated** to one decimal, never rounded up: 124.99 shows as 124.9
+and fails, so the app never shows a pass a chrono officer would not. The
+margin is taken from the figure shown, so they always agree. Fewer than 3
+shots carries a reminder that a chrono stage is 3.
+
+**Save string** files it under the load. The history header is the overall
+average weighted by shot count, so a 5-shot string counts for more than a
+3-shot one. Switching a load between Minor and Major re-judges its history.
+
+Loads are their own store (`stage-maths:chrono:v1`), separate from sessions,
+the board and drills. They go in the backup file (loads with no strings are
+left out) and **never** in a share link.
+
+The Garmin Xero C2 doesn't feed this yet: its Bluetooth protocol is
+undocumented, so velocities are typed in for now.
 
 ## Drills tab
 

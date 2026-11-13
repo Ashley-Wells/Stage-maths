@@ -116,6 +116,7 @@
     line-height: 1; cursor: pointer; background: transparent; color: var(--soft); border: none; }
   .sess .body { margin-top: 10px; }
   .sess h4 { margin: 12px 0 2px; font-size: 13px; font-weight: 600; color: var(--soft); }
+  .chh { margin: 14px 0 2px; font-size: 13px; font-weight: 600; color: var(--soft); }
   #distList h4 { margin: 14px 0 0; font-size: 12px; font-weight: 700; color: var(--soft);
     letter-spacing: .05em; text-transform: uppercase; }
   #distList h4:first-child { margin-top: 2px; }
@@ -126,6 +127,14 @@
   .rn .l2 { display: block; font-size: 11.5px; color: var(--soft); }
   .rn .l2:empty { display: none; }
   .sum { display: flex; flex-wrap: wrap; gap: 10px; }
+  .pfbig { display: flex; align-items: baseline; gap: 10px; margin: 12px 0 4px; }
+  .pfbig b { font-size: 34px; font-weight: 700; line-height: 1; }
+  .pfbig .ok { color: var(--accent); }
+  .pfbig .no { color: var(--pen); }
+  .pfbig span { font-size: 13px; color: var(--soft); }
+  .verdict { font-size: 13px; font-weight: 700; padding: 2px 8px; border-radius: 6px; }
+  .verdict.ok { background: var(--accent-bg); color: var(--accent); }
+  .verdict.no { background: var(--pen-bg); color: var(--pen); }
   .sum div { flex: 1 1 30%; min-width: 92px; background: var(--raised); border: 1px solid var(--line);
     border-radius: var(--r-sm); padding: 9px 10px; }
   .sum b { display: block; font-size: 19px; font-weight: 700; font-variant-numeric: tabular-nums; }
@@ -246,9 +255,9 @@
   .st .sh { font-size: 19px; font-weight: 700; }
   .st.lead .sh { color: var(--accent); }
   .st .pc { font-size: 12px; color: var(--soft); }
-  .st .x { flex: none; width: 32px; height: 32px; border-radius: 50%; font: inherit; font-size: 17px;
+  .st .x, #chronoCard .x { flex: none; width: 32px; height: 32px; border-radius: 50%; font: inherit; font-size: 17px;
     line-height: 1; cursor: pointer; background: transparent; color: var(--soft); border: none; }
-  .st .x:active { color: var(--pen); }
+  .st .x:active, #chronoCard .x:active { color: var(--pen); }
   .st.editing { background: var(--accent-bg); border-radius: var(--r-sm); }
 
   .log {
@@ -423,6 +432,54 @@
         <button type="button" id="bleConnect" class="primary">Connect</button>
         <button type="button" id="bleDisconnect" class="ghost" hidden>Disconnect</button>
       </div>
+    </div>
+
+    <div class="card" id="chronoCard">
+      <p class="lead">Chrono</p>
+      <div class="chips" id="loadChips"></div>
+      <div class="field">
+        <label for="loadName">Load</label>
+        <input type="text" id="loadName" placeholder="124gr 4.2 N320" autocomplete="off" spellcheck="false">
+      </div>
+      <div class="field">
+        <label for="loadGr">Bullet weight (gr)</label>
+        <input type="text" class="tm" id="loadGr" placeholder="—" inputmode="decimal" autocomplete="off" spellcheck="false">
+      </div>
+      <div class="seg" role="group" aria-label="Power factor target">
+        <button type="button" id="lMinor" aria-pressed="true">Minor 125</button>
+        <button type="button" id="lMajor" aria-pressed="false">Major 160</button>
+      </div>
+
+      <div class="seg sm" role="group" aria-label="Velocity entry">
+        <button type="button" id="cmShots" aria-pressed="true">Per shot</button>
+        <button type="button" id="cmAvg" aria-pressed="false">Average</button>
+      </div>
+      <div id="cShotsBox">
+        <div class="field">
+          <label for="cvel">Velocity (fps)</label>
+          <input type="text" class="tm" id="cvel" placeholder="—" inputmode="numeric" enterkeyhint="next" autocomplete="off" spellcheck="false">
+        </div>
+        <div class="actions"><button type="button" class="ghost" id="cAdd">Add shot</button></div>
+        <div id="cShotList"></div>
+      </div>
+      <div id="cAvgBox" hidden>
+        <div class="field">
+          <label for="cavg">Average (fps)</label>
+          <input type="text" class="tm" id="cavg" placeholder="—" inputmode="numeric" autocomplete="off" spellcheck="false">
+        </div>
+        <div class="field">
+          <label for="ccount">Shots it covers</label>
+          <input type="text" class="tm" id="ccount" value="3" inputmode="numeric" autocomplete="off" spellcheck="false">
+        </div>
+      </div>
+
+      <div id="cResult"></div>
+      <div class="actions">
+        <button type="button" id="cSave" class="primary">Save string</button>
+        <button type="button" id="cClear" class="ghost">Clear</button>
+      </div>
+      <p class="hint" id="chronoNote"></p>
+      <div id="cHist"></div>
     </div>
 
     <div class="card" id="bleInfoCard" hidden>
@@ -638,7 +695,7 @@
 <script>
 (function () {
   var el = function (id) { return document.getElementById(id); };
-  var BUILD = 'v34';  // bump with CACHE in sw.js
+  var BUILD = 'v35';  // bump with CACHE in sw.js
   el('build').textContent = 'build ' + BUILD + ' \u00b7 tap to update';
 
   // An escape hatch. A stale service worker has sent us chasing bugs that were
@@ -1695,7 +1752,9 @@
   }
 
   el('sessExport').addEventListener('click', function () {
-    if (!sessions.length) { alert('No sessions to export yet.'); return; }
+    var keepL = loads.filter(function (l) { return (l.strings || []).length; });
+    var anyDrill = drills.some(function (d) { return (d.attempts || []).length; });
+    if (!sessions.length && !anyDrill && !keepL.length) { alert('Nothing to export yet.'); return; }
     // The backup is yours and carries your drills. A share link is a single
     // session and never does - see packSession, which is given one session.
     // Only drills with attempts go: the app always keeps one blank drill on
@@ -1703,7 +1762,7 @@
     var keep = drills.filter(function (d) { return (d.attempts || []).length; });
     var blob = new Blob([JSON.stringify({
       app: 'stage-maths', v: 1, exported: new Date().toISOString(),
-      sessions: sessions, drills: keep
+      sessions: sessions, drills: keep, chrono: keepL
     }, null, 2)], { type: 'application/json' });
     var d = new Date();
     var stamp = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' +
@@ -1720,7 +1779,8 @@
     keep.forEach(function (d) { na += (d.attempts || []).length; });
     el('backupNote').textContent = 'Exported ' + sessions.length +
       (sessions.length === 1 ? ' session' : ' sessions') +
-      (na ? ' and ' + na + (na === 1 ? ' drill attempt' : ' drill attempts') : '') + '.';
+      (na ? ', ' + na + (na === 1 ? ' drill attempt' : ' drill attempts') : '') +
+      (keepL.length ? ', ' + keepL.length + (keepL.length === 1 ? ' load' : ' loads') : '') + '.';
   });
 
   el('sessImport').addEventListener('click', function () { el('sessFile').click(); });
@@ -1738,13 +1798,16 @@
       if (!list) { el('backupNote').textContent = 'That does not look like a Stage maths export.'; return; }
       var r = mergeSessions(list.slice(0, 500));
       var nd = (o && Array.isArray(o.drills)) ? mergeDrills(o.drills) : 0;
+      var nl = (o && Array.isArray(o.chrono)) ? mergeChrono(o.chrono) : 0;
       el('backupNote').textContent = r.failed
         ? 'Could not save - this browser is refusing to store data.'
         : 'Imported ' + r.added + (r.added === 1 ? ' session' : ' sessions') +
-          (nd ? ' and ' + nd + (nd === 1 ? ' drill' : ' drills') : '') +
+          (nd ? ', ' + nd + (nd === 1 ? ' drill' : ' drills') : '') +
+          (nl ? ', ' + nl + (nl === 1 ? ' load' : ' loads') : '') +
           (r.skipped ? ', skipped ' + r.skipped + ' already here or unreadable' : '') + '.';
       renderLog();
       renderDrills();
+      renderChrono();
     };
     fr.readAsText(f);
   });
@@ -2233,6 +2296,261 @@
     renderDrillRun();
     renderDrillStats();
     renderDrillList();
+  }
+
+  // ---- Chrono: power factor per load. Own storage key, like drills, so
+  // nothing here reaches the training or match stats. ----
+  var CHRONO_KEY = 'stage-maths:chrono:v1';
+  var loads = [], lActive = 0, cShots = [], cMode = 'shots';
+
+  function newLoad(n) {
+    return { id: uid(), name: 'Load ' + n, gr: 0, major: !!state.major, strings: [] };
+  }
+  function load_() { return loads[lActive]; }
+  function loadChrono() {
+    try {
+      var raw = localStorage.getItem(CHRONO_KEY);
+      var o = raw ? JSON.parse(raw) : null;
+      loads = Array.isArray(o) ? o.filter(function (l) { return l && l.id; }) : [];
+    } catch (e) { loads = []; }
+    loads.forEach(function (l) { if (!Array.isArray(l.strings)) l.strings = []; });
+    if (!loads.length) loads = [newLoad(1)];
+    if (!(lActive >= 0) || lActive >= loads.length) lActive = 0;
+  }
+  function persistChrono() {
+    try { localStorage.setItem(CHRONO_KEY, JSON.stringify(loads)); return true; } catch (e) { return false; }
+  }
+
+  function pfTarget(l) { return l.major ? 160 : 125; }
+  // Power factor is never shown rounded UP: 124.96 displayed as "125.0" next
+  // to a pass would be a lie about the one number that matters. Truncate the
+  // display, and judge pass/fail on the unrounded value.
+  // Truncated, never rounded up: 124.99 is 124.9 and a fail. The tiny
+  // allowance only absorbs float noise such as 124.9999999 for a true 125.
+  function pfTenths(v) { return Math.floor(v * 10 + 1e-7); }
+  function pfShow(v) { return (pfTenths(v) / 10).toFixed(1); }
+  function pfOf(gr, fps) { return gr * fps / 1000; }
+  function pfPass(pf, t) { return pf >= t - 1e-7; }
+
+  // Average, count, and the spread figures when individual shots exist.
+  function stringStats(vs) {
+    var n = vs.length, sum = 0, hi = -Infinity, lo = Infinity;
+    vs.forEach(function (v) { sum += v; if (v > hi) hi = v; if (v < lo) lo = v; });
+    var avg = sum / n, sq = 0;
+    vs.forEach(function (v) { sq += (v - avg) * (v - avg); });
+    return { n: n, avg: avg, hi: hi, lo: lo, es: hi - lo, sd: n > 1 ? Math.sqrt(sq / (n - 1)) : 0 };
+  }
+
+  // What is currently entered, as one string, or null.
+  function cCurrent() {
+    if (cMode === 'shots') {
+      return cShots.length ? { mode: 'shots', v: cShots.slice(), st: stringStats(cShots) } : null;
+    }
+    var a = parseFloat(el('cavg').value), n = parseInt(el('ccount').value, 10);
+    if (!(a > 0) || !(n >= 1)) return null;
+    return { mode: 'avg', avg: a, n: Math.min(n, 99), st: { n: Math.min(n, 99), avg: a } };
+  }
+
+  function verdictHtml(l, avg, n) {
+    var pf = pfOf(l.gr, avg), t = pfTarget(l), ok = pfPass(pf, t);
+    // The margin is taken from the figure shown, so it always agrees with it.
+    var m = pfTenths(pf) - t * 10;
+    return '<div class="pfbig"><b class="' + (ok ? 'ok' : 'no') + '">' + pfShow(pf) + '</b>' +
+      '<span class="verdict ' + (ok ? 'ok' : 'no') + '">' + (ok ? 'PASS' : 'FAIL') + '</span>' +
+      '<span>' + (m >= 0 ? '+' : '−') + (Math.abs(m) / 10).toFixed(1) + ' vs ' + t + '</span></div>' +
+      '<p class="hint" style="margin:0 0 8px">Power factor from the average of ' + n +
+      (n === 1 ? ' shot' : ' shots') + ', ' + Math.round(avg) + ' fps × ' + l.gr + 'gr' +
+      (n < 3 ? ' — a chrono stage is 3 shots' : (n > 3 ? ' — all ' + n + ' averaged' : '')) + '</p>';
+  }
+
+  function renderChronoChips() {
+    var c = el('loadChips');
+    c.innerHTML = '';
+    loads.forEach(function (l, i) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = l.name || ('Load ' + (i + 1));
+      b.setAttribute('aria-pressed', String(i === lActive));
+      b.addEventListener('click', function () { lActive = i; cShots = []; persistChrono(); renderChrono(); });
+      c.appendChild(b);
+    });
+    var add = document.createElement('button');
+    add.type = 'button';
+    add.textContent = '+ Load';
+    add.addEventListener('click', function () {
+      loads.push(newLoad(loads.length + 1)); lActive = loads.length - 1; cShots = [];
+      persistChrono(); renderChrono();
+    });
+    c.appendChild(add);
+  }
+
+  function renderChrono() {
+    var l = load_();
+    renderChronoChips();
+    if (document.activeElement !== el('loadName')) el('loadName').value = l.name || '';
+    if (document.activeElement !== el('loadGr')) el('loadGr').value = l.gr > 0 ? String(l.gr) : '';
+    el('lMinor').setAttribute('aria-pressed', String(!l.major));
+    el('lMajor').setAttribute('aria-pressed', String(!!l.major));
+    el('cmShots').setAttribute('aria-pressed', String(cMode === 'shots'));
+    el('cmAvg').setAttribute('aria-pressed', String(cMode === 'avg'));
+    el('cShotsBox').hidden = cMode !== 'shots';
+    el('cAvgBox').hidden = cMode !== 'avg';
+
+    var list = el('cShotList');
+    list.innerHTML = '';
+    cShots.forEach(function (v, i) {
+      var r = document.createElement('div');
+      r.className = 'rn';
+      r.innerHTML = '<span class="who"><span class="l1"></span></span><span class="hf"></span>' +
+        '<button class="x" type="button" aria-label="Remove shot">&times;</button>';
+      r.querySelector('.l1').textContent = 'Shot ' + (i + 1) + '  ' + v + ' fps';
+      r.querySelector('.hf').textContent = l.gr > 0 ? pfShow(pfOf(l.gr, v)) : '';
+      r.querySelector('.x').addEventListener('click', function () { cShots.splice(i, 1); renderChrono(); });
+      list.appendChild(r);
+    });
+
+    var cur = cCurrent(), res = el('cResult');
+    if (!cur) {
+      res.innerHTML = '';
+    } else if (!(l.gr > 0)) {
+      res.innerHTML = '<p class="hint">Enter the bullet weight to work out the power factor.</p>';
+    } else {
+      var html = verdictHtml(l, cur.st.avg, cur.st.n);
+      if (cur.mode === 'shots' && cur.st.n > 1) {
+        html += '<div class="sum">' +
+          statTile('average', Math.round(cur.st.avg) + '', false) +
+          statTile('high', cur.st.hi + '', false) + statTile('low', cur.st.lo + '', false) +
+          statTile('extreme spread', Math.round(cur.st.es) + '', false) +
+          statTile('SD', cur.st.sd.toFixed(1), false) + '</div>';
+      }
+      res.innerHTML = html;
+    }
+    el('cSave').disabled = !(cur && l.gr > 0);
+    el('chronoNote').textContent = '';
+    renderChronoHist();
+  }
+
+  function renderChronoHist() {
+    var l = load_(), box = el('cHist');
+    box.innerHTML = '';
+    if (!l.strings.length) return;
+    // Across strings, weight each by its shot count: an average of 3 is 3 shots.
+    var tot = 0, cnt = 0;
+    l.strings.forEach(function (x) { tot += x.avg * x.n; cnt += x.n; });
+    var h = document.createElement('h4');
+    h.className = 'chh';
+    h.textContent = l.strings.length + (l.strings.length === 1 ? ' string' : ' strings') + ', ' + cnt +
+      ' shots · overall ' + Math.round(tot / cnt) + ' fps' +
+      (l.gr > 0 ? ' · PF ' + pfShow(pfOf(l.gr, tot / cnt)) : '');
+    box.appendChild(h);
+    l.strings.slice().reverse().forEach(function (x) {
+      var r = document.createElement('div');
+      r.className = 'rn';
+      var bits = [x.n + (x.n === 1 ? ' shot' : ' shots'), Math.round(x.avg) + ' fps avg'];
+      if (x.mode === 'shots' && x.n > 1) {
+        var st = stringStats(x.v);
+        bits.push('ES ' + Math.round(st.es), 'SD ' + st.sd.toFixed(1));
+      } else if (x.mode === 'avg') bits.push('average entered');
+      var pf = l.gr > 0 ? pfOf(l.gr, x.avg) : 0;
+      r.innerHTML = '<span class="who"><span class="l1"></span><span class="l2"></span></span>' +
+        '<span class="hf"></span><button class="x" type="button" aria-label="Remove string">&times;</button>';
+      r.querySelector('.l1').textContent = fmtDate(new Date(x.at));
+      r.querySelector('.l2').textContent = bits.join('  ·  ');
+      r.querySelector('.hf').textContent = pf ? pfShow(pf) : '';
+      if (pf) {
+        var tag = document.createElement('span');
+        tag.className = 'fa';
+        tag.textContent = pfPass(pf, pfTarget(l)) ? 'pass' : 'fail';
+        r.querySelector('.l1').appendChild(tag);
+      }
+      r.querySelector('.x').addEventListener('click', function () {
+        if (!confirm('Delete this string?')) return;
+        l.strings = l.strings.filter(function (y) { return y.id !== x.id; });
+        persistChrono(); renderChrono();
+      });
+      box.appendChild(r);
+    });
+  }
+
+  function cAddShot() {
+    var v = parseInt(el('cvel').value.replace(/[^0-9]/g, ''), 10);
+    if (!(v >= 100 && v <= 5000)) {
+      el('chronoNote').textContent = el('cvel').value.trim() ? 'That does not look like a velocity in fps.' : '';
+      return;
+    }
+    cShots.push(v);
+    el('cvel').value = '';
+    renderChrono();
+    el('cvel').focus();   // straight on to the next shot
+  }
+  el('cAdd').addEventListener('click', cAddShot);
+  el('cvel').addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') { e.preventDefault(); cAddShot(); }
+  });
+  ['cavg', 'ccount'].forEach(function (id) { el(id).addEventListener('input', renderChrono); });
+  el('loadName').addEventListener('input', function () {
+    load_().name = el('loadName').value.slice(0, 60); persistChrono(); renderChronoChips();
+  });
+  el('loadGr').addEventListener('input', function () {
+    var g = parseFloat(el('loadGr').value);
+    load_().gr = (g > 0 && g < 1000) ? Math.round(g * 10) / 10 : 0;
+    persistChrono(); renderChrono();
+  });
+  el('lMinor').addEventListener('click', function () { load_().major = false; persistChrono(); renderChrono(); });
+  el('lMajor').addEventListener('click', function () { load_().major = true; persistChrono(); renderChrono(); });
+  el('cmShots').addEventListener('click', function () { cMode = 'shots'; renderChrono(); });
+  el('cmAvg').addEventListener('click', function () { cMode = 'avg'; renderChrono(); });
+  el('cClear').addEventListener('click', function () {
+    cShots = []; el('cavg').value = ''; el('ccount').value = '3'; renderChrono();
+  });
+  el('cSave').addEventListener('click', function () {
+    var l = load_(), cur = cCurrent();
+    if (!cur || !(l.gr > 0)) return;
+    var x = { id: uid(), at: new Date().toISOString(), mode: cur.mode, n: cur.st.n, avg: cur.st.avg };
+    if (cur.mode === 'shots') x.v = cur.v;
+    l.strings.push(x);
+    if (!persistChrono()) { l.strings.pop(); alert('Could not save - this browser is refusing to store data.'); return; }
+    cShots = []; el('cavg').value = ''; el('ccount').value = '3';
+    renderChrono();
+    el('chronoNote').textContent = 'Saved under ' + l.name + '.';
+  });
+
+  // Loads arriving in a backup are untrusted: coerced, capped, merged by id.
+  function cleanLoad(raw) {
+    if (!raw || typeof raw !== 'object') return null;
+    var str = function (v, max) { return typeof v === 'string' ? v.slice(0, max) : ''; };
+    var fin = function (v) { return typeof v === 'number' && isFinite(v) ? v : 0; };
+    var gr = fin(raw.gr);
+    var l = {
+      id: str(raw.id, 40) || uid(), name: str(raw.name, 60) || 'Load',
+      gr: (gr > 0 && gr < 1000) ? gr : 0, major: !!raw.major,
+      strings: (Array.isArray(raw.strings) ? raw.strings : []).slice(0, 2000).map(function (x) {
+        if (!x || typeof x !== 'object') return null;
+        var avg = fin(x.avg), n = Math.round(fin(x.n));
+        if (!(avg >= 100 && avg <= 5000) || !(n >= 1 && n <= 99)) return null;
+        var o = { id: str(x.id, 40) || uid(), at: str(x.at, 40) || new Date().toISOString(),
+                  mode: x.mode === 'avg' ? 'avg' : 'shots', n: n, avg: avg };
+        if (o.mode === 'shots') {
+          var v = (Array.isArray(x.v) ? x.v : []).slice(0, 99).map(fin)
+            .filter(function (q) { return q >= 100 && q <= 5000; });
+          if (!v.length) return null;
+          o.v = v; o.n = v.length; o.avg = stringStats(v).avg;
+        }
+        return o;
+      }).filter(Boolean)
+    };
+    return l;
+  }
+  function mergeChrono(list) {
+    var added = 0;
+    (Array.isArray(list) ? list : []).slice(0, 200).forEach(function (raw) {
+      var l = cleanLoad(raw);
+      if (!l || !l.strings.length) return;
+      if (loads.some(function (x) { return x.id === l.id; })) return;
+      loads.push(l); added++;
+    });
+    if (added) persistChrono();
+    return added;
   }
 
   var TABS = ['stage', 'overall', 'timer', 'log', 'drills'];
@@ -2751,6 +3069,7 @@
     if (name === 'overall') renderOverall();
     if (name === 'log') renderLog();
     if (name === 'drills') renderDrills();
+    if (name === 'timer') renderChrono();
     renderTimerBar();
   }
   TABS.forEach(function (t) {
@@ -3064,6 +3383,7 @@
   loadSessions();
   loadRoster();
   loadDrills();
+  loadChrono();
   migrateRoster();
   el('bMinor').setAttribute('aria-pressed', String(!state.major));
   el('bMajor').setAttribute('aria-pressed', String(state.major));

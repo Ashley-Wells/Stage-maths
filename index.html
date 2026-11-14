@@ -1,7 +1,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#EAF0F7" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#0E1420" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
+<script>(function () { try { var t = localStorage.getItem('stage-maths:theme');
+  if (t === 'light' || t === 'dark' || t === 'range') document.documentElement.setAttribute('data-theme', t);
+} catch (e) {} })();</script>
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
@@ -14,31 +17,44 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
+  /* Three themes: light (the default), dark, and range - a high-contrast
+     light one for sunlight. Dark and range also carry the readability
+     settings: secondary text a step heavier, high-contrast borders, and the
+     selected segment filled and outlined (an inset shadow, as Chrome rounds
+     border widths down to whole pixels). The theme button cycles them and
+     the choice is remembered; with none chosen, the phone's setting picks
+     light or dark. */
   :root {
     --bg: #EAF0F7; --surface: #FFFFFF; --raised: #F5F8FC; --line: #CBD8E6;
     --ink: #0B1826; --soft: #4F6076; --accent: #0B6FA4; --accent-bg: #D6EAF6;
     --pen: #C0392B; --pen-bg: #F8E3E0; --pen-line: #E0A79E;
+    --soft-w: 400; --sel-bg: var(--raised); --sel-shadow: 0 1px 2px rgba(0,0,0,.14);
     --r: 12px; --r-sm: 9px;
   }
   @media (prefers-color-scheme: dark) {
-    :root:not([data-theme="light"]) {
-      --bg: #0E1420; --surface: #16202F; --raised: #1E2B3D; --line: #2E3E55;
-      --ink: #EAF1FA; --soft: #93A6BE; --accent: #4FC3F7; --accent-bg: #12354B;
-      --pen: #FF8A80; --pen-bg: #3E2320; --pen-line: #7E4A45;
+    :root:not([data-theme]) {
+      --bg: #000000; --surface: #0A0A0A; --raised: #262626; --line: #9AA6B4;
+      --ink: #FFFFFF; --soft: #E0E6EE; --accent: #6FDBFF; --accent-bg: #0F3A4F;
+      --pen: #FF8F85; --pen-bg: #45201C; --pen-line: #B0635B;
+      --soft-w: 500; --sel-bg: var(--accent-bg); --sel-shadow: inset 0 0 0 1.5px var(--accent);
     }
+    :root:not([data-theme]) .viz { --s1: #4A9BF0; --s2: #F0703A; --s3: #2BC48A; --s4: #E6A100; --s5: #EE6E9E; --s6: #4CBB3C; }
   }
   :root[data-theme="dark"] {
-    --bg: #0E1420; --surface: #16202F; --raised: #1E2B3D; --line: #2E3E55;
-    --ink: #EAF1FA; --soft: #93A6BE; --accent: #4FC3F7; --accent-bg: #12354B;
-    --pen: #FF8A80; --pen-bg: #3E2320; --pen-line: #7E4A45;
+    --bg: #000000; --surface: #0A0A0A; --raised: #262626; --line: #9AA6B4;
+      --ink: #FFFFFF; --soft: #E0E6EE; --accent: #6FDBFF; --accent-bg: #0F3A4F;
+      --pen: #FF8F85; --pen-bg: #45201C; --pen-line: #B0635B;
+      --soft-w: 500; --sel-bg: var(--accent-bg); --sel-shadow: inset 0 0 0 1.5px var(--accent);
   }
-  @media (prefers-color-scheme: dark) {
-    :root:not([data-theme="light"]) .viz {
-      --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #008300;
-    }
+  :root[data-theme="dark"] .viz { --s1: #4A9BF0; --s2: #F0703A; --s3: #2BC48A; --s4: #E6A100; --s5: #EE6E9E; --s6: #4CBB3C; }
+  :root[data-theme="range"] {
+    --bg: #E9EDF2; --surface: #FFFFFF; --raised: #FFFFFF; --line: #4F6075;
+    --ink: #000000; --soft: #1F2D3D; --accent: #00507E; --accent-bg: #CCE4F4;
+    --pen: #A3170C; --pen-bg: #F8DCD8; --pen-line: #C9655B;
+    --soft-w: 500; --sel-bg: var(--accent-bg); --sel-shadow: inset 0 0 0 1.5px var(--accent);
   }
-  :root[data-theme="dark"] .viz {
-    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #008300;
+  :root[data-theme="range"] .viz {
+    --s1: #1557B0; --s2: #B4400C; --s3: #0B7A50; --s4: #8A5A00; --s5: #B02E66; --s6: #2E6B00;
   }
 
   * { box-sizing: border-box; }
@@ -57,7 +73,7 @@
   header { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 16px; }
   .mark { flex: none; width: 27px; height: 34px; fill: var(--accent); margin-top: 1px; }
   h1 { font-size: 16px; font-weight: 600; margin: 0; letter-spacing: -0.01em; }
-  .dek { font-size: 13px; color: var(--soft); margin: 1px 0 0; }
+  .dek { font-size: 13px; color: var(--soft); margin: 1px 0 0; font-weight: var(--soft-w); }
   #theme {
     margin-left: auto; flex: none; width: 40px; height: 40px; border-radius: 50%;
     display: grid; place-items: center; cursor: pointer;
@@ -75,7 +91,7 @@
     cursor: pointer; background: transparent; color: var(--soft); border: none; border-radius: var(--r-sm);
     transition: background 160ms ease, color 160ms ease;
   }
-  .seg button[aria-pressed="true"] { background: var(--raised); color: var(--ink); box-shadow: 0 1px 2px rgba(0,0,0,.14); }
+  .seg button[aria-pressed="true"] { background: var(--sel-bg); color: var(--ink); box-shadow: var(--sel-shadow); }
   .seg.top { background: var(--surface); border: 1px solid var(--line); }
   /* Five tabs at phone width: a step down stops the longest crowding. */
   .seg.top button { font-size: 13.5px; padding: 9px 2px; }
@@ -117,7 +133,7 @@
   .sess .body { margin-top: 10px; }
   .sess h4 { margin: 12px 0 2px; font-size: 13px; font-weight: 600; color: var(--soft); }
   .chh { margin: 14px 0 2px; font-size: 13px; font-weight: 600; color: var(--soft); }
-  .c2st { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--soft); margin: -2px 0 12px; }
+  .c2st { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--soft); margin: -2px 0 12px; font-weight: var(--soft-w); }
   .c2st span { flex: 1; min-width: 0; }
   .c2st .ghost { flex: none; padding: 6px 12px; font-size: 13px; }
   .rn.open-able { cursor: pointer; }
@@ -135,7 +151,7 @@
   .rn { display: flex; gap: 10px; font-size: 13.5px; padding: 5px 0; font-variant-numeric: tabular-nums; }
   .rn .who { flex: 1; min-width: 0; }
   .rn .l1 { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .rn .l2 { display: block; font-size: 11.5px; color: var(--soft); }
+  .rn .l2 { display: block; font-size: 11.5px; color: var(--soft); font-weight: var(--soft-w); }
   .rn .l2:empty { display: none; }
   .sum { display: flex; flex-wrap: wrap; gap: 10px; }
   .pfbig { display: flex; align-items: baseline; gap: 10px; margin: 12px 0 4px; }
@@ -173,7 +189,7 @@
   .chips button:active { transform: scale(0.95); }
 
   .field { display: flex; align-items: center; gap: 12px; margin-bottom: 9px; }
-  .field label { font-size: 15px; color: var(--soft); flex: 1; }
+  .field label { font-size: 15px; color: var(--soft); flex: 1; font-weight: var(--soft-w); }
   .field input {
     font: inherit; font-size: 20px; font-weight: 600; color: var(--ink);
     width: 108px; padding: 8px 12px; min-height: 44px; text-align: right;
@@ -184,7 +200,7 @@
   .field input.tm { width: 108px; text-align: right; font-size: 20px; }   /* a time, typed till-style */
   .field input::placeholder { color: var(--soft); font-weight: 400; }
   .field input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-bg); }
-  .hint { font-size: 12.5px; color: var(--soft); margin: 0 0 12px; }
+  .hint { font-size: 12.5px; color: var(--soft); margin: 0 0 12px; font-weight: var(--soft-w); }
   .blk { display: block; font-size: 15px; color: var(--soft); margin: 2px 0 6px; }
   textarea.note {
     display: block; width: 100%; box-sizing: border-box; font: inherit; font-size: 15px;
@@ -196,7 +212,7 @@
   textarea.note:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-bg); }
   .desc { font-size: 13.5px; color: var(--soft); margin: -2px 0 12px; white-space: pre-wrap; }
   .desc:empty { display: none; }
-  .lead { font-size: 13px; color: var(--soft); margin: 0 0 12px; }
+  .lead { font-size: 13px; color: var(--soft); margin: 0 0 12px; font-weight: var(--soft-w); }
 
   .pad { display: grid; grid-template-columns: repeat(4, 1fr); gap: 7px; margin: 4px 0 9px; }
   .pad button {
@@ -731,7 +747,7 @@
 <script>
 (function () {
   var el = function (id) { return document.getElementById(id); };
-  var BUILD = 'v46';  // bump with CACHE in sw.js
+  var BUILD = 'v47';  // bump with CACHE in sw.js
   el('build').textContent = 'build ' + BUILD + ' \u00b7 tap to update';
 
   // An escape hatch. A stale service worker has sent us chasing bugs that were
@@ -4393,14 +4409,31 @@
 
   var SUN = '<circle cx="12" cy="12" r="4"></circle><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"></path>';
   var MOON = '<path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5z"></path>';
-  function isDark() {
+  var CROSS = '<circle cx="12" cy="12" r="7"></circle><circle cx="12" cy="12" r="1.5"></circle><path d="M12 1.5v4M12 18.5v4M1.5 12h4M18.5 12h4"></path>';
+  var THEME_KEY = 'stage-maths:theme';
+  var THEMES = { light: { icon: SUN, name: 'Light', bar: '#EAF0F7', next: 'dark' },
+                 dark: { icon: MOON, name: 'Dark', bar: '#000000', next: 'range' },
+                 range: { icon: CROSS, name: 'Range', bar: '#E9EDF2', next: 'light' } };
+  function curTheme() {
     var set = document.documentElement.getAttribute('data-theme');
-    if (set) return set === 'dark';
-    return window.matchMedia('(prefers-color-scheme: dark)').matches;
+    if (THEMES[set]) return set;
+    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
   }
-  function paintTheme() { el('themeIcon').innerHTML = isDark() ? MOON : SUN; }
+  function paintTheme() {
+    var t = THEMES[curTheme()];
+    el('themeIcon').innerHTML = t.icon;
+    var lbl = 'Theme: ' + t.name + '. Tap for ' + THEMES[t.next].name + '.';
+    el('theme').setAttribute('aria-label', lbl);
+    el('theme').title = lbl;
+    // The phone's bar follows a chosen theme; unchosen, the media pair does.
+    if (document.documentElement.getAttribute('data-theme')) {
+      document.querySelectorAll('meta[name="theme-color"]').forEach(function (m) { m.setAttribute('content', t.bar); });
+    }
+  }
   el('theme').addEventListener('click', function () {
-    document.documentElement.setAttribute('data-theme', isDark() ? 'light' : 'dark');
+    var next = THEMES[curTheme()].next;
+    document.documentElement.setAttribute('data-theme', next);
+    try { localStorage.setItem(THEME_KEY, next); } catch (e) {}
     paintTheme();
   });
   paintTheme();

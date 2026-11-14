@@ -610,6 +610,24 @@ under deuteranopia. Keep that in mind before making the accent warm.
 The chart's series colours were re-validated against the new card surfaces;
 on the dark card they now clear 3:1 outright.
 
+**Three themes (v47).** The button in the header cycles **Light → Dark →
+Range** (sun, moon, crosshair) and the choice is remembered; until one is
+chosen the phone's setting picks Light or Dark. The old navy dark faded at
+the range: grey text was 6.6:1, borders 1.5:1 and cards 1.12:1 against the
+page, and glare roughly halves contrast outdoors. Chosen from four rendered
+candidates checked under simulated glare:
+
+- **Dark** is now black, high contrast: grey text 15.8:1, accent 12.5:1,
+  borders 8.0:1. Chart colours lifted for black.
+- **Range** is a high-contrast light theme for sunlight, where a light
+  screen beats glare: black text, grey text 14.0:1, accent 8.6:1, borders
+  6.4:1. Chart colours darkened to clear 5:1 on white.
+- Both make secondary text a step heavier and fill and outline the selected
+  segment (an inset shadow: Chrome rounds border widths down to whole
+  pixels, so a 1.5px border would draw at 1px). Light is unchanged.
+- The phone's bar follows a chosen theme. Accent and penalty stay blue
+  against red in every theme, for colourblind separation as above.
+
 App icons were not changed and still carry the old charcoal background. Per
 the note above, rename to `-v3` rather than overwriting if they are ever
 redrawn.

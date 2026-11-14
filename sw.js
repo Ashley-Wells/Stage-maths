@@ -1,4 +1,4 @@
-var CACHE = 'stage-maths-v47';
+var CACHE = 'stage-maths-v48';
 var SHELL = [
   './',
   './index.html',
@@ -36,6 +36,8 @@ function isPage(req) {
 self.addEventListener('fetch', function (e) {
   var req = e.request;
   if (req.method !== 'GET') return;
+  // Weather is live data: straight to the network, never from or into the cache.
+  if (req.url.indexOf('https://api.open-meteo.com/') === 0) return;
 
   if (isPage(req)) {
     e.respondWith(

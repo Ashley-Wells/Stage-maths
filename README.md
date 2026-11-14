@@ -512,6 +512,19 @@ saved string** to open it: each shot with its power factor, then low, high
 and extreme spread; an average-only string shows the average it was entered
 with. It is view only; tap again to close, and × still deletes.
 
+**Conditions (v48).** Temperature (°C), humidity (%) and pressure (hPa) can
+be recorded with each string. Typed values are checked (−30 to 60°C, 0 to
+100%, 800 to 1100 hPa; an out-of-range one stops the save) and stay for the
+next string, which suits ammo temperature too. With **Weather on save** on,
+saving also reads the weather once for where you are and adds it to that
+string a moment later (the row shows "weather…" meanwhile); a typed value
+wins field by field. Pressure is surface pressure, the actual pressure at
+the range's altitude, not the sea-level figure a forecast quotes. With no
+signal or no location the string is saved without a reading and the note
+says so. Rows show e.g. "24.5°C · 41% · 1009 hPa"; an opened string says
+which values were typed and when the weather was read. Backups keep them,
+checked on import.
+
 Loads are their own store (`stage-maths:chrono:v1`), separate from sessions,
 the board and drills. They go in the backup file (loads with no strings are
 left out) and **never** in a share link.
@@ -643,7 +656,13 @@ Check these against your region's current rules before trusting them.
 ## Privacy
 
 Everything is stored in the browser on your own device. No server, no
-accounts, nothing leaves the phone. That includes saved sessions — they live
+accounts, nothing leaves the phone, with one opt-in exception: **Weather on
+save** on the Chrono tab (off by default). While it is on, saving a string
+sends one request to Open-Meteo (`api.open-meteo.com`, no account or key)
+carrying the phone's location rounded to two decimal places (about 1 km), and
+asks for the current temperature, humidity and surface pressure. Nothing
+else goes with it, and nothing is sent while it is off. The service worker
+never caches those replies. That includes saved sessions — they live
 in this browser only, so clearing site data loses them and they don't follow
 you to another phone.
 

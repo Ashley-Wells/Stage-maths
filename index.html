@@ -117,6 +117,9 @@
   .sess .body { margin-top: 10px; }
   .sess h4 { margin: 12px 0 2px; font-size: 13px; font-weight: 600; color: var(--soft); }
   .chh { margin: 14px 0 2px; font-size: 13px; font-weight: 600; color: var(--soft); }
+  .c2st { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--soft); margin: -2px 0 12px; }
+  .c2st span { flex: 1; min-width: 0; }
+  .c2st .ghost { flex: none; padding: 6px 12px; font-size: 13px; }
   .rn.open-able { cursor: pointer; }
   .rn.open-able .l1::after { content: ' \25B8'; color: var(--soft); }
   .rn.open-able[aria-expanded="true"] .l1::after { content: ' \25BE'; }
@@ -340,9 +343,10 @@
   <div class="seg top" role="group" aria-label="View">
     <button type="button" id="tabStage" aria-pressed="true">Stage</button>
     <button type="button" id="tabOverall" aria-pressed="false">Overall</button>
-    <button type="button" id="tabTimer" aria-pressed="false">Timer</button>
     <button type="button" id="tabLog" aria-pressed="false">Log</button>
     <button type="button" id="tabDrills" aria-pressed="false">Drills</button>
+    <button type="button" id="tabChrono" aria-pressed="false">Chrono</button>
+    <button type="button" id="tabBluetooth" aria-pressed="false">Bluetooth</button>
   </div>
 
   <div id="viewStage">
@@ -440,7 +444,7 @@
   </div>
 
 
-  <div id="viewTimer" hidden>
+  <div id="viewBluetooth" hidden>
     <div class="card">
       <p class="lead">Bluetooth devices</p>
       <p class="hint" id="bleSupport"></p>
@@ -458,55 +462,6 @@
         </div>
         <p class="hint">For a device that is neither. Add device asks Chrome for this service as well as the two known ones, and a device that has it is saved with it.</p>
       </div>
-    </div>
-
-    <div class="card" id="chronoCard">
-      <p class="lead">Chrono</p>
-      <div class="chips" id="loadChips"></div>
-      <div class="field">
-        <label for="loadName">Load</label>
-        <input type="text" id="loadName" placeholder="124gr 4.2 N320" autocomplete="off" spellcheck="false">
-      </div>
-      <div class="field">
-        <label for="loadGr">Bullet weight (gr)</label>
-        <input type="text" class="tm" id="loadGr" placeholder="—" inputmode="decimal" autocomplete="off" spellcheck="false">
-      </div>
-      <div class="seg" role="group" aria-label="Power factor target">
-        <button type="button" id="lMinor" aria-pressed="true">Minor 125</button>
-        <button type="button" id="lMajor" aria-pressed="false">Major 160</button>
-      </div>
-
-      <div class="seg sm" role="group" aria-label="Velocity entry">
-        <button type="button" id="cmShots" aria-pressed="true">Per shot</button>
-        <button type="button" id="cmAvg" aria-pressed="false">Average</button>
-      </div>
-      <div id="cShotsBox">
-        <div class="field">
-          <label for="cvel">Velocity (fps)</label>
-          <input type="text" class="tm" id="cvel" placeholder="—" inputmode="numeric" enterkeyhint="next" autocomplete="off" spellcheck="false">
-        </div>
-        <div class="actions"><button type="button" class="ghost" id="cAdd">Add shot</button></div>
-        <div id="cShotList"></div>
-      </div>
-      <div id="cAvgBox" hidden>
-        <div class="field">
-          <label for="cavg">Average (fps)</label>
-          <input type="text" class="tm" id="cavg" placeholder="—" inputmode="numeric" autocomplete="off" spellcheck="false">
-        </div>
-        <div class="field">
-          <label for="ccount">Shots it covers</label>
-          <input type="text" class="tm" id="ccount" value="3" inputmode="numeric" autocomplete="off" spellcheck="false">
-        </div>
-      </div>
-
-      <div id="cResult"></div>
-      <p class="hint" id="c2Sum" hidden></p>
-      <div class="actions">
-        <button type="button" id="cSave" class="primary">Save string</button>
-        <button type="button" id="cClear" class="ghost">Clear</button>
-      </div>
-      <p class="hint" id="chronoNote"></p>
-      <div id="cHist"></div>
     </div>
 
     <div class="card" id="bleInfoCard" hidden>
@@ -631,6 +586,59 @@
     </div>
   </div>
 
+  <div id="viewChrono" hidden>
+    <div class="card" id="chronoCard">
+      <p class="lead">Chrono</p>
+      <div class="c2st" id="c2Status" hidden><span id="c2StText"></span>
+        <button type="button" class="ghost" id="c2Conn">Connect</button></div>
+      <div class="chips" id="loadChips"></div>
+      <div class="field">
+        <label for="loadName">Load</label>
+        <input type="text" id="loadName" placeholder="124gr 4.2 N320" autocomplete="off" spellcheck="false">
+      </div>
+      <div class="field">
+        <label for="loadGr">Bullet weight (gr)</label>
+        <input type="text" class="tm" id="loadGr" placeholder="—" inputmode="decimal" autocomplete="off" spellcheck="false">
+      </div>
+      <div class="seg" role="group" aria-label="Power factor target">
+        <button type="button" id="lMinor" aria-pressed="true">Minor 125</button>
+        <button type="button" id="lMajor" aria-pressed="false">Major 160</button>
+      </div>
+
+      <div class="seg sm" role="group" aria-label="Velocity entry">
+        <button type="button" id="cmShots" aria-pressed="true">Per shot</button>
+        <button type="button" id="cmAvg" aria-pressed="false">Average</button>
+      </div>
+      <div id="cShotsBox">
+        <div class="field">
+          <label for="cvel">Velocity (fps)</label>
+          <input type="text" class="tm" id="cvel" placeholder="—" inputmode="numeric" enterkeyhint="next" autocomplete="off" spellcheck="false">
+        </div>
+        <div class="actions"><button type="button" class="ghost" id="cAdd">Add shot</button></div>
+        <div id="cShotList"></div>
+      </div>
+      <div id="cAvgBox" hidden>
+        <div class="field">
+          <label for="cavg">Average (fps)</label>
+          <input type="text" class="tm" id="cavg" placeholder="—" inputmode="numeric" autocomplete="off" spellcheck="false">
+        </div>
+        <div class="field">
+          <label for="ccount">Shots it covers</label>
+          <input type="text" class="tm" id="ccount" value="3" inputmode="numeric" autocomplete="off" spellcheck="false">
+        </div>
+      </div>
+
+      <div id="cResult"></div>
+      <p class="hint" id="c2Sum" hidden></p>
+      <div class="actions">
+        <button type="button" id="cSave" class="primary">Save string</button>
+        <button type="button" id="cClear" class="ghost">Clear</button>
+      </div>
+      <p class="hint" id="chronoNote"></p>
+      <div id="cHist"></div>
+    </div>
+  </div>
+
   <div id="viewDrills" hidden>
     <div class="chips" id="drillChips"></div>
 
@@ -723,7 +731,7 @@
 <script>
 (function () {
   var el = function (id) { return document.getElementById(id); };
-  var BUILD = 'v45';  // bump with CACHE in sw.js
+  var BUILD = 'v46';  // bump with CACHE in sw.js
   el('build').textContent = 'build ' + BUILD + ' \u00b7 tap to update';
 
   // An escape hatch. A stale service worker has sent us chasing bugs that were
@@ -2639,7 +2647,7 @@
     return added;
   }
 
-  var TABS = ['stage', 'overall', 'timer', 'log', 'drills'];
+  var TABS = ['stage', 'overall', 'log', 'drills', 'chrono', 'bluetooth'];
   // Two pages carry a timer bar, the stage form and the drill form. One set of
   // state drives both: Auto fills whichever page is open, since you are either
   // scoring a squad or running a drill, never both at once.
@@ -2649,7 +2657,7 @@
   ];
   // The form a live time lands in is the LAST form page visited, not the tab
   // on screen. Keying this on the current tab sent the time to the hidden
-  // Stage form whenever the string ran while the Timer tab was showing -
+  // Stage form whenever the string ran while the Bluetooth tab was showing -
   // which is exactly where you are just after connecting - so the drill field
   // stayed empty until Auto was toggled.
   var formTab = 'stage';
@@ -3163,7 +3171,8 @@
     if (name === 'overall') renderOverall();
     if (name === 'log') renderLog();
     if (name === 'drills') renderDrills();
-    if (name === 'timer') { renderChrono(); renderDevices(); watchSaved(); }
+    if (name === 'chrono') { renderChrono(); renderC2Status(); }
+    if (name === 'bluetooth') { renderDevices(); watchSaved(); }
     renderTimerBar();
   }
   TABS.forEach(function (t) {
@@ -4144,7 +4153,38 @@
   }
   function isNear(id) { return inRange[id] && Date.now() - inRange[id] < 60000; }
 
+  // The Chrono page's line about the Xero C2: linked, connecting, or a
+  // Connect button for the saved one (the most recently used, if several).
+  function c2Rec() {
+    var best = null;
+    devices.forEach(function (r) {
+      if (r.svc === GARMIN_SVC && (!best || (r.last || r.added) > (best.last || best.added))) best = r;
+    });
+    return best;
+  }
+  function renderC2Status() {
+    var box = el('c2Status'), t = el('c2StText'), b = el('c2Conn');
+    if (!navigator.bluetooth) { box.hidden = true; return; }
+    box.hidden = false;
+    var rec = c2Rec();
+    if (!rec) {
+      t.textContent = 'No Xero C2 saved yet. Add it on the Bluetooth tab.';
+      b.hidden = false; b.textContent = 'Bluetooth';
+      b.onclick = function () { setTab('bluetooth'); };
+      return;
+    }
+    var live = bleRec === rec && (bleState === 'on' || bleState === 'connecting');
+    var st = !live ? 'not connected'
+      : bleState === 'connecting' ? 'connecting\u2026'
+      : (G && G.rec === rec && G.ready) ? 'linked' : 'linking\u2026';
+    var other = !live && bleRec && bleRec !== rec && bleState === 'on' ? ' (' + devLabel(bleRec) + ' is connected; one at a time)' : '';
+    t.textContent = devLabel(rec) + ' \u00b7 ' + st + other;
+    b.hidden = live; b.textContent = 'Connect';
+    b.onclick = function () { connectSaved(rec); };
+  }
+
   function renderDevices() {
+    renderC2Status();
     var box = el('devList');
     var a = document.activeElement;
     // Never rebuild under a nickname being typed; catch up on blur.
@@ -4250,11 +4290,11 @@
   });
 
   // The timer chip on the Stage and Drills forms: connect the last timer,
-  // retry after "not found", or send you to the Timer tab to add one.
+  // retry after "not found", or send you to the Bluetooth tab to add one.
   function chipTap() {
-    if (bleState === 'on' || bleState === 'connecting') { setTab('timer'); return; }
+    if (bleState === 'on' || bleState === 'connecting') { setTab('bluetooth'); return; }
     var rec = lastTimer();
-    if (rec && navigator.bluetooth) connectSaved(rec); else setTab('timer');
+    if (rec && navigator.bluetooth) connectSaved(rec); else setTab('bluetooth');
   }
   el('tmrChip').addEventListener('click', chipTap);
   el('dTmrChip').addEventListener('click', chipTap);

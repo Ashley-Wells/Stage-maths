@@ -209,11 +209,12 @@ ID. The file also carries drills and chrono loads, and can be exported with no
 sessions at all. The same ID rule as share links, so a backup and a shared link can't
 fight each other. Imported files are validated exactly like share links.
 
-## Timer tab
+## Bluetooth tab
 
-Connects to a shot timer over Web Bluetooth — Chrome on Android only, since
-Safari has never supported it. Defaults to the Nordic UART Service, which is
-what the AMG Lab Commander uses.
+The last tab (called Timer before v46). Connects to a shot timer or the Xero
+C2 chronograph over Web Bluetooth — Chrome on Android only, since Safari has
+never supported it. It recognises the AMG Lab Commander (Nordic UART Service)
+and the Garmin Xero C2 by themselves.
 
 On the Commander, turn on **BLE push** in the advanced menu — hold "M" while
 switching the timer on. Without it the timer won't send shot data. Only one
@@ -281,7 +282,7 @@ It defaults to the AMG's RX, else the first writable one.
 
 ### Garmin Xero C2
 
-What's known so far, from nRF Connect and the Timer tab:
+What's known so far, from nRF Connect and the Bluetooth tab:
 
 - Service `6a4e2800-667b-11e3-949a-0800200c9a66`, Garmin's multi-link
   protocol as used by its watches (the layout Gadgetbridge documents).
@@ -410,13 +411,13 @@ called**:
   Typing a time by hand holds it the same way.
 - The chip shows the connection: **Timer on**, **Connecting…**, **Not found ·
   retry** or **Tap to connect**. Tapping it connects the last-used timer, or
-  opens the Timer tab if none is saved. Beside it are the shot count and
+  opens the Bluetooth tab if none is saved. Beside it are the shot count and
   first shot time.
 
 A live time lands in the form you were **last on** — Stage or Drills — not
 whichever tab happens to be showing. So you can arm Auto on Drills, flip to
-the Timer tab to watch the string, and the time is waiting on Drills when you
-go back. "Use this time" on the Timer tab follows the same rule.
+the Bluetooth tab to watch the string, and the time is waiting on Drills when you
+go back. "Use this time" on the Bluetooth tab follows the same rule.
 
 ### AMG Lab Commander frame format
 
@@ -474,9 +475,15 @@ and the origin as the beep.
 Remote start is still unknown. The hex box writes arbitrary bytes to the RX
 characteristic if you want to hunt for it.
 
-### Chrono and power factor
+## Chrono tab
 
-Below the timer controls. Each **load** gets a chip, a name and a bullet
+Its own tab since v46, between Drills and Bluetooth. A line at the top shows
+the saved Xero C2: **linked**, **connecting…**, or **not connected** with a
+**Connect** button (if another device is connected, it says so: one is held
+at a time). With no C2 saved it points to the Bluetooth tab. C2 shots land
+here whichever tab is showing.
+
+Each **load** gets a chip, a name and a bullet
 weight in grains, and is set to Minor (125) or Major (160).
 
 Power factor is grains × fps ÷ 1000, judged on the **average** velocity, as a

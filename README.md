@@ -498,6 +498,13 @@ shots carries a reminder that a chrono stage is 3.
 average weighted by shot count, so a 5-shot string counts for more than a
 3-shot one. Switching a load between Minor and Major re-judges its history.
 
+Each saved string shows its date and time, and, when shots came from the
+Xero C2, where from: "Xero C2 · Pistol 2", or "Xero C2 · Pistol 2 + 1 typed"
+when some were typed (strings saved before v45 carry no source). **Tap a
+saved string** to open it: each shot with its power factor, then low, high
+and extreme spread; an average-only string shows the average it was entered
+with. It is view only; tap again to close, and × still deletes.
+
 Loads are their own store (`stage-maths:chrono:v1`), separate from sessions,
 the board and drills. They go in the backup file (loads with no strings are
 left out) and **never** in a share link.

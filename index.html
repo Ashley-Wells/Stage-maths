@@ -117,6 +117,14 @@
   .sess .body { margin-top: 10px; }
   .sess h4 { margin: 12px 0 2px; font-size: 13px; font-weight: 600; color: var(--soft); }
   .chh { margin: 14px 0 2px; font-size: 13px; font-weight: 600; color: var(--soft); }
+  .rn.open-able { cursor: pointer; }
+  .rn.open-able .l1::after { content: ' \25B8'; color: var(--soft); }
+  .rn.open-able[aria-expanded="true"] .l1::after { content: ' \25BE'; }
+  .chdet { margin: 0 0 8px 12px; padding: 2px 0 4px 10px; border-left: 2px solid var(--line, rgba(127,127,127,.3)); }
+  .chdet .rn { padding: 2px 0; font-size: 13px; }
+  .chdet .rn .hf { display: inline; background: none; border: 0; padding: 0; margin: 0; border-radius: 0; box-shadow: none; font-weight: 700; }
+  .chdet .hint { overflow-wrap: anywhere; }
+  .chdet .hint { margin: 4px 0 0; }
   #distList h4 { margin: 14px 0 0; font-size: 12px; font-weight: 700; color: var(--soft);
     letter-spacing: .05em; text-transform: uppercase; }
   #distList h4:first-child { margin-top: 2px; }
@@ -715,7 +723,7 @@
 <script>
 (function () {
   var el = function (id) { return document.getElementById(id); };
-  var BUILD = 'v44';  // bump with CACHE in sw.js
+  var BUILD = 'v45';  // bump with CACHE in sw.js
   el('build').textContent = 'build ' + BUILD + ' \u00b7 tap to update';
 
   // An escape hatch. A stale service worker has sent us chasing bugs that were
@@ -2322,6 +2330,11 @@
   // nothing here reaches the training or match stats. ----
   var CHRONO_KEY = 'stage-maths:chrono:v1';
   var loads = [], lActive = 0, cShots = [], cMode = 'shots';
+  // Kept in step with cShots: 'c2' for a shot the Xero C2 sent, '' typed.
+  // cProf is the C2 profile those shots came under; cOpen the saved strings
+  // expanded in the list.
+  var cFrom = [], cProf = '', cOpen = {};
+  function cReset() { cShots = []; cFrom = []; cProf = ''; }
 
   function newLoad(n) {
     return { id: uid(), name: 'Load ' + n, gr: 0, major: !!state.major, strings: [] };
@@ -2391,14 +2404,14 @@
       b.type = 'button';
       b.textContent = l.name || ('Load ' + (i + 1));
       b.setAttribute('aria-pressed', String(i === lActive));
-      b.addEventListener('click', function () { lActive = i; cShots = []; persistChrono(); renderChrono(); });
+      b.addEventListener('click', function () { lActive = i; cReset(); persistChrono(); renderChrono(); });
       c.appendChild(b);
     });
     var add = document.createElement('button');
     add.type = 'button';
     add.textContent = '+ Load';
     add.addEventListener('click', function () {
-      loads.push(newLoad(loads.length + 1)); lActive = loads.length - 1; cShots = [];
+      loads.push(newLoad(loads.length + 1)); lActive = loads.length - 1; cReset();
       persistChrono(); renderChrono();
     });
     c.appendChild(add);
@@ -2425,7 +2438,7 @@
         '<button class="x" type="button" aria-label="Remove shot">&times;</button>';
       r.querySelector('.l1').textContent = 'Shot ' + (i + 1) + '  ' + v + ' fps';
       r.querySelector('.hf').textContent = l.gr > 0 ? pfShow(pfOf(l.gr, v)) : '';
-      r.querySelector('.x').addEventListener('click', function () { cShots.splice(i, 1); renderChrono(); });
+      r.querySelector('.x').addEventListener('click', function () { cShots.splice(i, 1); cFrom.splice(i, 1); renderChrono(); });
       list.appendChild(r);
     });
 
@@ -2471,11 +2484,27 @@
         var st = stringStats(x.v);
         bits.push('ES ' + Math.round(st.es), 'SD ' + st.sd.toFixed(1));
       } else if (x.mode === 'avg') bits.push('average entered');
+      if (x.src) {
+        var typed = x.n - x.src.c2;
+        bits.push(x.src.dev + (x.src.prof ? ' · ' + x.src.prof : '') + (typed > 0 ? ' + ' + typed + ' typed' : ''));
+      }
       var pf = l.gr > 0 ? pfOf(l.gr, x.avg) : 0;
       r.innerHTML = '<span class="who"><span class="l1"></span><span class="l2"></span></span>' +
         '<span class="hf"></span><button class="x" type="button" aria-label="Remove string">&times;</button>';
-      r.querySelector('.l1').textContent = fmtDate(new Date(x.at));
+      var at = new Date(x.at);
+      r.querySelector('.l1').textContent = fmtDate(at) + (isFinite(at) ? ' ' + String(at.getHours()).padStart(2, '0') +
+        ':' + String(at.getMinutes()).padStart(2, '0') : '');
       r.querySelector('.l2').textContent = bits.join('  ·  ');
+      // Tap the row (not ×) to show its shots; view only.
+      r.className = 'rn open-able';
+      r.tabIndex = 0;
+      r.setAttribute('role', 'button');
+      r.setAttribute('aria-expanded', String(!!cOpen[x.id]));
+      var toggle = function () { cOpen[x.id] = !cOpen[x.id]; renderChronoHist(); };
+      r.addEventListener('click', function (ev) { if (!ev.target.closest('.x')) toggle(); });
+      r.addEventListener('keydown', function (ev) {
+        if ((ev.key === 'Enter' || ev.key === ' ') && ev.target === r) { ev.preventDefault(); toggle(); }
+      });
       r.querySelector('.hf').textContent = pf ? pfShow(pf) : '';
       if (pf) {
         var tag = document.createElement('span');
@@ -2483,13 +2512,43 @@
         tag.textContent = pfPass(pf, pfTarget(l)) ? 'pass' : 'fail';
         r.querySelector('.l1').appendChild(tag);
       }
-      r.querySelector('.x').addEventListener('click', function () {
+      r.querySelector('.x').addEventListener('click', function (ev) {
+        ev.stopPropagation();
         if (!confirm('Delete this string?')) return;
         l.strings = l.strings.filter(function (y) { return y.id !== x.id; });
+        delete cOpen[x.id];
         persistChrono(); renderChrono();
       });
       box.appendChild(r);
+      if (cOpen[x.id]) box.appendChild(chronoDetail(l, x));
     });
+  }
+
+  // A saved string opened: each shot with its power factor, then the spread.
+  function chronoDetail(l, x) {
+    var d = document.createElement('div');
+    d.className = 'chdet';
+    if (x.mode !== 'shots' || !x.v) {
+      var p0 = document.createElement('p');
+      p0.className = 'hint';
+      p0.textContent = 'Average entered: ' + Math.round(x.avg) + ' fps over ' + x.n + (x.n === 1 ? ' shot.' : ' shots.');
+      d.appendChild(p0);
+      return d;
+    }
+    x.v.forEach(function (v, i) {
+      var r = document.createElement('div');
+      r.className = 'rn';
+      r.innerHTML = '<span class="who"><span class="l1"></span></span><span class="hf"></span>';
+      r.querySelector('.l1').textContent = 'Shot ' + (i + 1) + '  ' + v + ' fps';
+      r.querySelector('.hf').textContent = l.gr > 0 ? pfShow(pfOf(l.gr, v)) : '';
+      d.appendChild(r);
+    });
+    var st = stringStats(x.v), p1 = document.createElement('p');
+    p1.className = 'hint';
+    p1.textContent = 'Low ' + st.lo + '  ·  High ' + st.hi + '  ·  ES ' + Math.round(st.es * 10) / 10 + ' fps' +
+      (l.gr > 0 ? '  ·  power factor at ' + l.gr + 'gr' : '');
+    d.appendChild(p1);
+    return d;
   }
 
   function cAddShot() {
@@ -2498,7 +2557,7 @@
       el('chronoNote').textContent = el('cvel').value.trim() ? 'That does not look like a velocity in fps.' : '';
       return;
     }
-    cShots.push(v);
+    cShots.push(v); cFrom.push('');
     el('cvel').value = '';
     renderChrono();
     el('cvel').focus();   // straight on to the next shot
@@ -2521,16 +2580,20 @@
   el('cmShots').addEventListener('click', function () { cMode = 'shots'; renderChrono(); });
   el('cmAvg').addEventListener('click', function () { cMode = 'avg'; renderChrono(); });
   el('cClear').addEventListener('click', function () {
-    cShots = []; el('cavg').value = ''; el('ccount').value = '3'; el('c2Sum').hidden = true; renderChrono();
+    cReset(); el('cavg').value = ''; el('ccount').value = '3'; el('c2Sum').hidden = true; renderChrono();
   });
   el('cSave').addEventListener('click', function () {
     var l = load_(), cur = cCurrent();
     if (!cur || !(l.gr > 0)) return;
     var x = { id: uid(), at: new Date().toISOString(), mode: cur.mode, n: cur.st.n, avg: cur.st.avg };
-    if (cur.mode === 'shots') x.v = cur.v;
+    if (cur.mode === 'shots') {
+      x.v = cur.v;
+      var fromC2 = cFrom.filter(function (f) { return f === 'c2'; }).length;
+      if (fromC2) x.src = { dev: 'Xero C2', prof: cProf.slice(0, 40), c2: fromC2 };
+    }
     l.strings.push(x);
     if (!persistChrono()) { l.strings.pop(); alert('Could not save - this browser is refusing to store data.'); return; }
-    cShots = []; el('cavg').value = ''; el('ccount').value = '3'; el('c2Sum').hidden = true;
+    cReset(); el('cavg').value = ''; el('ccount').value = '3'; el('c2Sum').hidden = true;
     renderChrono();
     el('chronoNote').textContent = 'Saved under ' + l.name + '.';
   });
@@ -2555,6 +2618,9 @@
             .filter(function (q) { return q >= 100 && q <= 5000; });
           if (!v.length) return null;
           o.v = v; o.n = v.length; o.avg = stringStats(v).avg;
+          var sr = x.src, c2n = sr && Math.round(fin(sr.c2));
+          if (sr && typeof sr === 'object' && c2n >= 1)
+            o.src = { dev: str(sr.dev, 40) || 'Xero C2', prof: str(sr.prof, 40), c2: Math.min(c2n, o.n) };
         }
         return o;
       }).filter(Boolean)
@@ -3561,7 +3627,9 @@
         if (num > prev + 1) bleLog('Garmin: missed ' + (num - prev - 1 === 1 ? 'shot ' + (prev + 1) : 'shots ' + (prev + 1) + '–' + (num - 1)) + ' from the C2');
         if (num > prev) G.lastShot[sid] = num;
         if (fps >= 100 && fps <= 5000) {
-          cShots.push(fps); cMode = 'shots';
+          cShots.push(fps); cFrom.push('c2'); cMode = 'shots';
+          var pn = pick(st, 12);
+          if (pn) cProf = new TextDecoder().decode(new Uint8Array(pn));
           bleLog('Garmin ← shot ' + num + ': ' + fps + ' fps (' + +mps.toFixed(2) + ' m/s)');
         } else bleLog('Garmin ← shot ' + num + ': ' + fps + ' fps is out of range, not added');
       }
